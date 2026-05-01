@@ -1,0 +1,10 @@
+export { LoginPage } from './LoginPage';
+export { DashboardPage } from './DashboardPage';
+export { ResourcesPage } from './ResourcesPage';
+export { RatesPage } from './RatesPage';
+export { CatalogPage } from './CatalogPage';
+export { TicketsPage } from './TicketsPage';
+export { ReportsPage } from './ReportsPage';
+export { CreateCompanyPage } from './CreateCompanyPage';
+export { CompaniesPage } from './CompaniesPage';
+export { CompanyDetailPage } from './CompanyDetailPage';

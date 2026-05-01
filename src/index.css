@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface-base: #ffffff;
+  --surface-elevated: #f8f9fa;
+  --surface-overlay: #ffffff;
+
+  --ink-primary: #111827;
+  --ink-secondary: #4b5563;
+  --ink-tertiary: #6b7280;
+  --ink-muted: #9ca3af;
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-standard: rgba(0, 0, 0, 0.1);
+  --border-emphasis: rgba(0, 0, 0, 0.15);
+  --border-strong: rgba(0, 0, 0, 0.25);
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+
+  --success: #059669;
+  --warning: #d97706;
+  --error: #dc2626;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--surface-base);
+    color: var(--ink-primary);
+  }
+
+  input, button, select, textarea {
+    font-family: inherit;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)];
+  }
+
+  .btn-secondary {
+    @apply btn bg-white text-[var(--ink-primary)] border border-[var(--border-emphasis)] hover:bg-[var(--surface-elevated)];
+  }
+
+  .btn-danger {
+    @apply btn bg-[var(--error)] text-white hover:opacity-90;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 text-sm rounded-md border bg-[var(--surface-elevated)];
+    @apply focus:outline-none focus:ring-2 focus:border-transparent;
+    @apply placeholder:text-[var(--ink-muted)];
+  }
+
+  .label {
+    @apply block text-sm font-medium text-[var(--ink-secondary)] mb-1;
+  }
+
+  .card {
+    @apply bg-white border border-[var(--border-subtle)] rounded-lg;
+  }
+}
