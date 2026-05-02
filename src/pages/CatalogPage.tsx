@@ -1,13 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '@/contexts';
 import { catalogApi } from '@/api';
-import { Button, Card, Input, Select, Modal, Badge, EmptyState } from '@/components/ui';
+import { Button, Card, Input, Select, Modal, Badge, EmptyState, Pagination } from '@/components/ui';
 import type { SaleCatalogItem, CatalogItemType } from '@/types';
 import { getErrorMessage } from '@/api/client';
+
+const DEFAULT_LIMIT = 20;
 
 export function CatalogPage() {
   const { currentCompany, currentBranch } = useCompany();
   const [items, setItems] = useState<SaleCatalogItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [limit, setLimit] = useState<number | null>(DEFAULT_LIMIT);
+  const [offset, setOffset] = useState<number | null>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,15 +26,21 @@ export function CatalogPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchItems = useCallback(async () => {
+  const fetchItems = useCallback(async (offsetValue: number = 0) => {
     if (!currentCompany) return;
     try {
-      const params: { branchId?: string } = {};
+      const params: { branchId?: string; limit?: number; offset?: number } = {
+        limit: DEFAULT_LIMIT,
+        offset: offsetValue,
+      };
       if (currentBranch) {
         params.branchId = currentBranch.id;
       }
       const data = await catalogApi.list(currentCompany.id, params);
       setItems(data);
+      setTotal(data.length);
+      setLimit(DEFAULT_LIMIT);
+      setOffset(0);
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -38,9 +49,13 @@ export function CatalogPage() {
   useEffect(() => {
     if (currentCompany) {
       setIsLoading(true);
-      fetchItems().finally(() => setIsLoading(false));
+      fetchItems(0).finally(() => setIsLoading(false));
     }
   }, [currentCompany, fetchItems]);
+
+  const handlePageChange = (newOffset: number) => {
+    fetchItems(newOffset);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,45 +163,53 @@ export function CatalogPage() {
           />
         </Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => (
-            <Card key={item.id} padding>
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-[var(--ink-primary)]">{item.name}</p>
-                  {item.description && (
-                    <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">{item.description}</p>
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {items.map((item) => (
+              <Card key={item.id} padding>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-[var(--ink-primary)]">{item.name}</p>
+                    {item.description && (
+                      <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">{item.description}</p>
+                    )}
+                    <p className="text-sm font-semibold text-[var(--accent)] mt-2">
+                      ${parseFloat(item.price).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge variant={item.type === 'PRODUCT' ? 'default' : 'warning'}>
+                      {item.type === 'PRODUCT' ? 'Producto' : 'Servicio'}
+                    </Badge>
+                    <Badge variant={item.status === 'ACTIVE' ? 'success' : 'default'}>
+                      {item.status}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border-subtle)]">
+                  <Button variant="ghost" className="flex-1 text-xs" onClick={() => openEditModal(item)}>
+                    Editar
+                  </Button>
+                  {item.status === 'ACTIVE' ? (
+                    <Button variant="ghost" className="flex-1 text-xs" onClick={() => handleDeactivate(item)}>
+                      Desactivar
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" className="flex-1 text-xs" onClick={() => handleActivate(item)}>
+                      Activar
+                    </Button>
                   )}
-                  <p className="text-sm font-semibold text-[var(--accent)] mt-2">
-                    ${parseFloat(item.price).toFixed(2)}
-                  </p>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <Badge variant={item.type === 'PRODUCT' ? 'default' : 'warning'}>
-                    {item.type === 'PRODUCT' ? 'Producto' : 'Servicio'}
-                  </Badge>
-                  <Badge variant={item.status === 'ACTIVE' ? 'success' : 'default'}>
-                    {item.status}
-                  </Badge>
-                </div>
-              </div>
-              <div className="flex gap-2 mt-3 pt-3 border-t border-[var(--border-subtle)]">
-                <Button variant="ghost" className="flex-1 text-xs" onClick={() => openEditModal(item)}>
-                  Editar
-                </Button>
-                {item.status === 'ACTIVE' ? (
-                  <Button variant="ghost" className="flex-1 text-xs" onClick={() => handleDeactivate(item)}>
-                    Desactivar
-                  </Button>
-                ) : (
-                  <Button variant="ghost" className="flex-1 text-xs" onClick={() => handleActivate(item)}>
-                    Activar
-                  </Button>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
+              </Card>
+            ))}
+          </div>
+          <Pagination
+            total={total}
+            limit={limit}
+            offset={offset}
+            onPageChange={handlePageChange}
+          />
+        </>
       )}
 
       <Modal

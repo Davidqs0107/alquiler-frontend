@@ -30,6 +30,26 @@ export interface Company {
   slug: string;
   status: RecordStatus;
   createdAt: string;
+  branches?: Branch[];
+  users?: CompanyUser[];
+}
+
+export interface CompanyUser {
+  id: string;
+  role: MembershipRole;
+  status: RecordStatus;
+  createdAt: string;
+  updatedAt: string;
+  user: User;
+}
+
+export interface BranchUser {
+  id: string;
+  role: MembershipRole;
+  status: RecordStatus;
+  createdAt: string;
+  updatedAt: string;
+  user: User;
 }
 
 export interface Branch {
@@ -40,6 +60,12 @@ export interface Branch {
   createdAt: string;
 }
 
+export interface ResourceCategoryVisibility {
+  branchId: string;
+  isVisible: boolean;
+  updatedAt: string;
+}
+
 export interface ResourceCategory {
   id: string;
   companyId: string;
@@ -47,6 +73,7 @@ export interface ResourceCategory {
   description?: string;
   status: RecordStatus;
   createdAt: string;
+  visibilityOverrides?: ResourceCategoryVisibility[];
 }
 
 export interface Resource {

@@ -5,3 +5,4 @@ export { Modal } from './Modal';
 export { Badge } from './Badge';
 export { Select } from './Select';
 export { EmptyState } from './EmptyState';
+export { Pagination, SimplePagination } from './Pagination';

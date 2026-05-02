@@ -21,6 +21,28 @@ import type {
   RegisterPaymentRequest,
   RegisterPaymentResponse,
 } from '@/types';
+import type { RecordStatus } from '@/types';
+
+interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  limit: number | null;
+  offset: number | null;
+}
+
+export function extractData<T>(response: T[] | { data: T[] }): T[] {
+  if (Array.isArray(response)) {
+    return response;
+  }
+  return response.data;
+}
+
+export function extractMeta<T>(response: T[] | { data: T[]; total: number; limit: number | null; offset: number | null }): { total: number; limit: number | null; offset: number | null } | null {
+  if (Array.isArray(response)) {
+    return null;
+  }
+  return { total: response.total, limit: response.limit, offset: response.offset };
+}
 
 export const authApi = {
   login: async (data: LoginRequest): Promise<LoginResponse> => {
@@ -59,12 +81,22 @@ export const companiesApi = {
     const response = await api.post(`/companies/${companyId}/branches`, data);
     return response.data;
   },
+
+  listMembers: async (companyId: string) => {
+    const response = await api.get(`/companies/${companyId}/members`);
+    return response.data;
+  },
+
+  listBranchMembers: async (companyId: string, branchId: string) => {
+    const response = await api.get(`/companies/${companyId}/branches/${branchId}/members`);
+    return response.data;
+  },
 };
 
 export const categoriesApi = {
-  list: async (companyId: string): Promise<ResourceCategory[]> => {
-    const response = await api.get<ResourceCategory[]>(`/companies/${companyId}/categories`);
-    return response.data;
+  list: async (companyId: string, params?: { limit?: number; offset?: number }): Promise<ResourceCategory[]> => {
+    const response = await api.get<ResourceCategory[] | PaginatedResponse<ResourceCategory>>(`/companies/${companyId}/categories`, { params });
+    return extractData(response.data as ResourceCategory[] | PaginatedResponse<ResourceCategory>);
   },
 
   create: async (companyId: string, data: { name: string; description?: string }) => {
@@ -76,22 +108,23 @@ export const categoriesApi = {
     companyId: string,
     categoryId: string,
     branchId: string,
-    visible: boolean
+    isVisible: boolean
   ) => {
     const response = await api.patch(
       `/companies/${companyId}/categories/${categoryId}/branches/${branchId}/visibility`,
-      { visible }
+      { isVisible }
     );
     return response.data;
   },
 };
 
 export const resourcesApi = {
-  list: async (companyId: string, branchId: string): Promise<Resource[]> => {
-    const response = await api.get<Resource[]>(
-      `/companies/${companyId}/branches/${branchId}/resources`
+  list: async (companyId: string, branchId: string, params?: { limit?: number; offset?: number }): Promise<Resource[]> => {
+    const response = await api.get<Resource[] | PaginatedResponse<Resource>>(
+      `/companies/${companyId}/branches/${branchId}/resources`,
+      { params }
     );
-    return response.data;
+    return extractData(response.data as Resource[] | PaginatedResponse<Resource>);
   },
 
   create: async (
@@ -105,14 +138,27 @@ export const resourcesApi = {
     );
     return response.data;
   },
+
+  updateStatus: async (
+    companyId: string,
+    branchId: string,
+    resourceId: string,
+    status: RecordStatus
+  ) => {
+    const response = await api.patch(
+      `/companies/${companyId}/branches/${branchId}/resources/${resourceId}/status`,
+      { status }
+    );
+    return response.data;
+  },
 };
 
 export const ratePlansApi = {
   list: async (companyId: string, branchId: string): Promise<RatePlan[]> => {
-    const response = await api.get<RatePlan[]>(
+    const response = await api.get<RatePlan[] | PaginatedResponse<RatePlan>>(
       `/companies/${companyId}/branches/${branchId}/rate-plans`
     );
-    return response.data;
+    return extractData(response.data as RatePlan[] | PaginatedResponse<RatePlan>);
   },
 
   create: async (
@@ -135,15 +181,28 @@ export const ratePlansApi = {
     );
     return response.data;
   },
+
+  updateStatus: async (
+    companyId: string,
+    branchId: string,
+    ratePlanId: string,
+    status: RecordStatus
+  ) => {
+    const response = await api.patch(
+      `/companies/${companyId}/branches/${branchId}/rate-plans/${ratePlanId}/status`,
+      { status }
+    );
+    return response.data;
+  },
 };
 
 export const catalogApi = {
-  list: async (companyId: string, params?: { branchId?: string; status?: string }) => {
-    const response = await api.get<SaleCatalogItem[]>(
+  list: async (companyId: string, params?: { branchId?: string; status?: string; limit?: number; offset?: number }) => {
+    const response = await api.get<SaleCatalogItem[] | PaginatedResponse<SaleCatalogItem>>(
       `/companies/${companyId}/catalog-items`,
       { params }
     );
-    return response.data;
+    return extractData(response.data as SaleCatalogItem[] | PaginatedResponse<SaleCatalogItem>);
   },
 
   create: async (
@@ -184,12 +243,12 @@ export const catalogApi = {
 };
 
 export const ticketsApi = {
-  list: async (companyId: string, branchId: string, params?: { status?: string }) => {
-    const response = await api.get<Ticket[]>(
+  list: async (companyId: string, branchId: string, params?: { status?: string; limit?: number; offset?: number }) => {
+    const response = await api.get<Ticket[] | PaginatedResponse<Ticket>>(
       `/companies/${companyId}/branches/${branchId}/tickets`,
       { params }
     );
-    return response.data;
+    return extractData(response.data as Ticket[] | PaginatedResponse<Ticket>);
   },
 
   get: async (companyId: string, branchId: string, ticketId: string): Promise<Ticket> => {

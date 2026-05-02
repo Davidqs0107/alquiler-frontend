@@ -4,6 +4,7 @@ import { ratePlansApi, resourcesApi, categoriesApi } from '@/api';
 import { Button, Card, Input, Select, Modal, Badge, EmptyState } from '@/components/ui';
 import type { RatePlan, Resource, ResourceCategory } from '@/types';
 import { getErrorMessage } from '@/api/client';
+import { Eye, EyeOff } from 'lucide-react';
 
 type PricingType = 'BLOCK' | 'TIME_UNIT';
 
@@ -27,6 +28,7 @@ export function RatesPage() {
     blockPrice: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [togglingRateStatus, setTogglingRateStatus] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!currentCompany || !currentBranch) return;
@@ -76,6 +78,20 @@ export function RatesPage() {
       setError(getErrorMessage(err));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleRateStatus = async (rate: RatePlan) => {
+    if (!currentCompany || !currentBranch) return;
+    const newStatus = rate.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    setTogglingRateStatus(rate.id);
+    try {
+      await ratePlansApi.updateStatus(currentCompany.id, currentBranch.id, rate.id, newStatus);
+      fetchData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setTogglingRateStatus(null);
     }
   };
 
@@ -144,7 +160,7 @@ export function RatesPage() {
             return (
               <Card key={rate.id} padding>
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[var(--ink-primary)]">{rate.name}</p>
                     <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">{scope}</p>
                     <p className="text-xs text-[var(--ink-tertiary)]">
@@ -153,9 +169,25 @@ export function RatesPage() {
                         : `${rate.blockPrice} / ${rate.blockHours}h`}
                     </p>
                   </div>
-                  <Badge variant={rate.status === 'ACTIVE' ? 'success' : 'default'}>
-                    {rate.status}
-                  </Badge>
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => handleToggleRateStatus(rate)}
+                      disabled={togglingRateStatus === rate.id}
+                      className="p-1.5 rounded hover:bg-[var(--surface-secondary)] transition-colors disabled:opacity-50"
+                      title={rate.status === 'ACTIVE' ? 'Deshabilitar tarifa' : 'Habilitar tarifa'}
+                    >
+                      {togglingRateStatus === rate.id ? (
+                        <div className="w-4 h-4 animate-spin border border-[var(--accent)] border-t-transparent rounded-full" />
+                      ) : rate.status === 'ACTIVE' ? (
+                        <Eye className="w-4 h-4 text-[var(--success)]" />
+                      ) : (
+                        <EyeOff className="w-4 h-4 text-[var(--warning)]" />
+                      )}
+                    </button>
+                    <Badge variant={rate.status === 'ACTIVE' ? 'success' : 'default'}>
+                      {rate.status}
+                    </Badge>
+                  </div>
                 </div>
               </Card>
             );

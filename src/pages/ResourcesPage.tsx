@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '@/contexts';
-import { categoriesApi, resourcesApi } from '@/api';
-import { Button, Card, CardHeader, CardTitle, Input, Select, Modal, Badge, EmptyState } from '@/components/ui';
+import { categoriesApi, resourcesApi, extractData, extractMeta } from '@/api';
+import { Button, Card, CardHeader, CardTitle, Input, Select, Modal, Badge, EmptyState, Pagination } from '@/components/ui';
 import type { ResourceCategory, Resource } from '@/types';
 import { getErrorMessage } from '@/api/client';
+import { Eye, EyeOff } from 'lucide-react';
+
+const DEFAULT_LIMIT = 20;
 
 export function ResourcesPage() {
   const { currentCompany, currentBranch } = useCompany();
@@ -20,22 +23,76 @@ export function ResourcesPage() {
   const [resourceDescription, setResourceDescription] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [togglingVisibility, setTogglingVisibility] = useState<string | null>(null);
+  const [togglingResourceStatus, setTogglingResourceStatus] = useState<string | null>(null);
+  const [categoryOffset, setCategoryOffset] = useState<number | null>(0);
+  const [categoryTotal, setCategoryTotal] = useState(0);
+  const [resourceOffset, setResourceOffset] = useState<number | null>(0);
 
-  const fetchCategories = useCallback(async () => {
+  const getVisibilityForCurrentBranch = useCallback(
+    (category: ResourceCategory): boolean => {
+      if (!currentBranch) return true;
+      const override = category.visibilityOverrides?.find((v) => v.branchId === currentBranch.id);
+      return override ? override.isVisible : true;
+    },
+    [currentBranch]
+  );
+
+  const handleToggleVisibility = async (category: ResourceCategory) => {
+    if (!currentCompany || !currentBranch) return;
+    const currentVisibility = getVisibilityForCurrentBranch(category);
+    setTogglingVisibility(category.id);
+    try {
+      await categoriesApi.updateVisibility(
+        currentCompany.id,
+        category.id,
+        currentBranch.id,
+        !currentVisibility
+      );
+      fetchCategories(categoryOffset || 0);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setTogglingVisibility(null);
+    }
+  };
+
+  const handleToggleResourceStatus = async (resource: Resource) => {
+    if (!currentCompany || !currentBranch) return;
+    const newStatus = resource.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    setTogglingResourceStatus(resource.id);
+    try {
+      await resourcesApi.updateStatus(currentCompany.id, currentBranch.id, resource.id, newStatus);
+      fetchResources(resourceOffset || 0);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setTogglingResourceStatus(null);
+    }
+  };
+
+  const fetchCategories = useCallback(async (offsetValue: number = 0) => {
     if (!currentCompany) return;
     try {
-      const data = await categoriesApi.list(currentCompany.id);
+      const response = await categoriesApi.list(currentCompany.id, { limit: DEFAULT_LIMIT, offset: offsetValue });
+      const data = extractData<ResourceCategory>(response);
+      const meta = extractMeta<ResourceCategory>(response);
       setCategories(data);
+      setCategoryTotal(meta?.total ?? data.length);
+      setCategoryOffset(meta?.offset ?? offsetValue);
     } catch (err) {
       setError(getErrorMessage(err));
     }
   }, [currentCompany]);
 
-  const fetchResources = useCallback(async () => {
+  const fetchResources = useCallback(async (offsetValue: number = 0) => {
     if (!currentCompany || !currentBranch) return;
     try {
-      const data = await resourcesApi.list(currentCompany.id, currentBranch.id);
+      const response = await resourcesApi.list(currentCompany.id, currentBranch.id, { limit: DEFAULT_LIMIT, offset: offsetValue });
+      const data = extractData<Resource>(response);
+      const meta = extractMeta<Resource>(response);
       setResources(data);
+      setResourceOffset(meta?.offset ?? offsetValue);
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -44,7 +101,7 @@ export function ResourcesPage() {
   useEffect(() => {
     if (currentCompany && currentBranch) {
       setIsLoading(true);
-      Promise.all([fetchCategories(), fetchResources()])
+      Promise.all([fetchCategories(0), fetchResources(0)])
         .finally(() => setIsLoading(false));
     }
   }, [currentCompany, currentBranch, fetchCategories, fetchResources]);
@@ -134,7 +191,7 @@ export function ResourcesPage() {
         <Card padding>
           <CardHeader>
             <CardTitle>Categorías</CardTitle>
-            <Badge>{categories.length}</Badge>
+            <Badge>{categoryTotal}</Badge>
           </CardHeader>
           {categories.length === 0 ? (
             <EmptyState
@@ -142,24 +199,54 @@ export function ResourcesPage() {
               description="Creá tu primera categoría para organizar los recursos."
             />
           ) : (
-            <div className="space-y-2">
-              {categories.map((category) => (
-                <div
-                  key={category.id}
-                  className="flex items-center justify-between p-3 border border-[var(--border-subtle)] rounded-md"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-[var(--ink-primary)]">{category.name}</p>
-                    {category.description && (
-                      <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">{category.description}</p>
-                    )}
-                  </div>
-                  <Badge variant={category.status === 'ACTIVE' ? 'success' : 'default'}>
-                    {category.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="space-y-2">
+                {categories.map((category) => {
+                  const isVisible = getVisibilityForCurrentBranch(category);
+                  return (
+                    <div
+                      key={category.id}
+                      className="flex items-center justify-between p-3 border border-[var(--border-subtle)] rounded-md"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-[var(--ink-primary)]">{category.name}</p>
+                        {category.description && (
+                          <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">{category.description}</p>
+                        )}
+                        {!isVisible && (
+                          <span className="text-xs text-[var(--warning)] mt-0.5">Oculta en esta sede</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        <button
+                          onClick={() => handleToggleVisibility(category)}
+                          disabled={togglingVisibility === category.id}
+                          className="p-1.5 rounded hover:bg-[var(--surface-secondary)] transition-colors disabled:opacity-50"
+                          title={isVisible ? 'Ocultar en esta sede' : 'Mostrar en esta sede'}
+                        >
+                          {togglingVisibility === category.id ? (
+                            <div className="w-4 h-4 animate-spin border border-[var(--accent)] border-t-transparent rounded-full" />
+                          ) : isVisible ? (
+                            <Eye className="w-4 h-4 text-[var(--success)]" />
+                          ) : (
+                            <EyeOff className="w-4 h-4 text-[var(--warning)]" />
+                          )}
+                        </button>
+                        <Badge variant={category.status === 'ACTIVE' ? 'success' : 'default'}>
+                          {category.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <Pagination
+                total={categoryTotal}
+                limit={DEFAULT_LIMIT}
+                offset={categoryOffset}
+                onPageChange={(offset) => fetchCategories(offset)}
+              />
+            </>
           )}
         </Card>
 
@@ -180,15 +267,31 @@ export function ResourcesPage() {
                   key={resource.id}
                   className="flex items-center justify-between p-3 border border-[var(--border-subtle)] rounded-md"
                 >
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-[var(--ink-primary)]">{resource.name}</p>
                     <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">
                       {resource.category?.name || 'Sin categoría'}
                     </p>
                   </div>
-                  <Badge variant={resource.status === 'ACTIVE' ? 'success' : 'default'}>
-                    {resource.status}
-                  </Badge>
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => handleToggleResourceStatus(resource)}
+                      disabled={togglingResourceStatus === resource.id}
+                      className="p-1.5 rounded hover:bg-[var(--surface-secondary)] transition-colors disabled:opacity-50"
+                      title={resource.status === 'ACTIVE' ? 'Deshabilitar recurso' : 'Habilitar recurso'}
+                    >
+                      {togglingResourceStatus === resource.id ? (
+                        <div className="w-4 h-4 animate-spin border border-[var(--accent)] border-t-transparent rounded-full" />
+                      ) : resource.status === 'ACTIVE' ? (
+                        <Eye className="w-4 h-4 text-[var(--success)]" />
+                      ) : (
+                        <EyeOff className="w-4 h-4 text-[var(--warning)]" />
+                      )}
+                    </button>
+                    <Badge variant={resource.status === 'ACTIVE' ? 'success' : 'default'}>
+                      {resource.status}
+                    </Badge>
+                  </div>
                 </div>
               ))}
             </div>
