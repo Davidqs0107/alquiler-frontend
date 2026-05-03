@@ -4,7 +4,7 @@ import { categoriesApi, resourcesApi, extractData, extractMeta } from '@/api';
 import { Button, Card, CardHeader, CardTitle, Input, Select, Modal, Badge, EmptyState, Pagination } from '@/components/ui';
 import type { ResourceCategory, Resource } from '@/types';
 import { getErrorMessage } from '@/api/client';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Pencil } from 'lucide-react';
 
 const DEFAULT_LIMIT = 20;
 
@@ -16,7 +16,11 @@ export function ResourcesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showCategoryEditModal, setShowCategoryEditModal] = useState(false);
   const [showResourceModal, setShowResourceModal] = useState(false);
+  const [showResourceEditModal, setShowResourceEditModal] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<ResourceCategory | null>(null);
+  const [editingResource, setEditingResource] = useState<Resource | null>(null);
   const [categoryName, setCategoryName] = useState('');
   const [categoryDescription, setCategoryDescription] = useState('');
   const [resourceName, setResourceName] = useState('');
@@ -132,11 +136,70 @@ export function ResourcesPage() {
     setIsSubmitting(true);
     try {
       await resourcesApi.create(currentCompany.id, currentBranch.id, {
-        categoryId: selectedCategoryId,
+        resourceCategoryId: selectedCategoryId,
         name: resourceName,
         description: resourceDescription || undefined,
       });
       setShowResourceModal(false);
+      setResourceName('');
+      setResourceDescription('');
+      setSelectedCategoryId('');
+      fetchResources();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditCategory = (category: ResourceCategory) => {
+    setEditingCategory(category);
+    setCategoryName(category.name);
+    setCategoryDescription(category.description || '');
+    setShowCategoryEditModal(true);
+  };
+
+  const handleUpdateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCompany || !editingCategory) return;
+    setIsSubmitting(true);
+    try {
+      await categoriesApi.update(currentCompany.id, editingCategory.id, {
+        name: categoryName,
+        description: categoryDescription || null,
+      });
+      setShowCategoryEditModal(false);
+      setEditingCategory(null);
+      setCategoryName('');
+      setCategoryDescription('');
+      fetchCategories();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditResource = (resource: Resource) => {
+    setEditingResource(resource);
+    setResourceName(resource.name);
+    setResourceDescription(resource.description || '');
+    setSelectedCategoryId(resource.resourceCategoryId);
+    setShowResourceEditModal(true);
+  };
+
+  const handleUpdateResource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCompany || !currentBranch || !editingResource) return;
+    setIsSubmitting(true);
+    try {
+      await resourcesApi.update(currentCompany.id, currentBranch.id, editingResource.id, {
+        name: resourceName,
+        description: resourceDescription || null,
+        resourceCategoryId: selectedCategoryId,
+      });
+      setShowResourceEditModal(false);
+      setEditingResource(null);
       setResourceName('');
       setResourceDescription('');
       setSelectedCategoryId('');
@@ -219,6 +282,13 @@ export function ResourcesPage() {
                       </div>
                       <div className="flex items-center gap-2 ml-4">
                         <button
+                          onClick={() => handleEditCategory(category)}
+                          className="p-1.5 rounded hover:bg-[var(--surface-secondary)] transition-colors"
+                          title="Editar categoría"
+                        >
+                          <Pencil className="w-4 h-4 text-[var(--ink-tertiary)]" />
+                        </button>
+                        <button
                           onClick={() => handleToggleVisibility(category)}
                           disabled={togglingVisibility === category.id}
                           className="p-1.5 rounded hover:bg-[var(--surface-secondary)] transition-colors disabled:opacity-50"
@@ -274,6 +344,13 @@ export function ResourcesPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => handleEditResource(resource)}
+                      className="p-1.5 rounded hover:bg-[var(--surface-secondary)] transition-colors"
+                      title="Editar recurso"
+                    >
+                      <Pencil className="w-4 h-4 text-[var(--ink-tertiary)]" />
+                    </button>
                     <button
                       onClick={() => handleToggleResourceStatus(resource)}
                       disabled={togglingResourceStatus === resource.id}
@@ -361,6 +438,103 @@ export function ResourcesPage() {
             </Button>
             <Button type="submit" isLoading={isSubmitting}>
               Crear
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={showCategoryEditModal}
+        onClose={() => {
+          setShowCategoryEditModal(false);
+          setEditingCategory(null);
+          setCategoryName('');
+          setCategoryDescription('');
+        }}
+        title="Editar Categoría"
+      >
+        <form onSubmit={handleUpdateCategory} className="space-y-4">
+          <Input
+            label="Nombre"
+            value={categoryName}
+            onChange={(e) => setCategoryName(e.target.value)}
+            placeholder="Ej: Canchas de fútbol"
+            required
+          />
+          <Input
+            label="Descripción (opcional)"
+            value={categoryDescription}
+            onChange={(e) => setCategoryDescription(e.target.value)}
+            placeholder="Descripción de la categoría"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowCategoryEditModal(false);
+                setEditingCategory(null);
+                setCategoryName('');
+                setCategoryDescription('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isSubmitting}>
+              Guardar
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={showResourceEditModal}
+        onClose={() => {
+          setShowResourceEditModal(false);
+          setEditingResource(null);
+          setResourceName('');
+          setResourceDescription('');
+          setSelectedCategoryId('');
+        }}
+        title="Editar Recurso"
+      >
+        <form onSubmit={handleUpdateResource} className="space-y-4">
+          <Select
+            label="Categoría"
+            options={categories.map((c) => ({ value: c.id, label: c.name }))}
+            value={selectedCategoryId}
+            onChange={(e) => setSelectedCategoryId(e.target.value)}
+            placeholder="Seleccionar categoría"
+          />
+          <Input
+            label="Nombre"
+            value={resourceName}
+            onChange={(e) => setResourceName(e.target.value)}
+            placeholder="Ej: Cancha 1"
+            required
+          />
+          <Input
+            label="Descripción (opcional)"
+            value={resourceDescription}
+            onChange={(e) => setResourceDescription(e.target.value)}
+            placeholder="Descripción del recurso"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowResourceEditModal(false);
+                setEditingResource(null);
+                setResourceName('');
+                setResourceDescription('');
+                setSelectedCategoryId('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isSubmitting}>
+              Guardar
             </Button>
           </div>
         </form>

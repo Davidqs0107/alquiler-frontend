@@ -4,7 +4,7 @@ import { ratePlansApi, resourcesApi, categoriesApi } from '@/api';
 import { Button, Card, Input, Select, Modal, Badge, EmptyState } from '@/components/ui';
 import type { RatePlan, Resource, ResourceCategory } from '@/types';
 import { getErrorMessage } from '@/api/client';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Pencil } from 'lucide-react';
 
 type PricingType = 'BLOCK' | 'TIME_UNIT';
 
@@ -17,6 +17,8 @@ export function RatesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingRate, setEditingRate] = useState<RatePlan | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     pricingType: 'TIME_UNIT' as PricingType,
@@ -24,14 +26,15 @@ export function RatesPage() {
     categoryId: '',
     basePrice: '',
     timeUnitMinutes: '60',
-    blockHours: '',
-    blockPrice: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [togglingRateStatus, setTogglingRateStatus] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!currentCompany || !currentBranch) return;
+    if (!currentCompany || !currentBranch) {
+      console.log('No company or branch selected, skipping data fetch');
+      return
+    };
     try {
       const [ratesData, resourcesData, categoriesData] = await Promise.all([
         ratePlansApi.list(currentCompany.id, currentBranch.id),
@@ -66,8 +69,6 @@ export function RatesPage() {
         resourceId: formData.resourceId || undefined,
         categoryId: formData.categoryId || undefined,
         timeUnitMinutes: formData.pricingType === 'TIME_UNIT' ? parseInt(formData.timeUnitMinutes, 10) : undefined,
-        blockHours: formData.pricingType === 'BLOCK' ? parseInt(formData.blockHours, 10) : undefined,
-        blockPrice: formData.pricingType === 'BLOCK' ? formData.blockPrice : undefined,
       };
 
       await ratePlansApi.create(currentCompany.id, currentBranch.id, payload);
@@ -103,12 +104,51 @@ export function RatesPage() {
       categoryId: '',
       basePrice: '',
       timeUnitMinutes: '60',
-      blockHours: '',
-      blockPrice: '',
     });
   };
 
+  const handleEditRate = (rate: RatePlan) => {
+    setEditingRate(rate);
+    setFormData({
+      name: rate.name,
+      pricingType: rate.pricingType,
+      resourceId: rate.resourceId || '',
+      categoryId: rate.categoryId || '',
+      basePrice: rate.basePrice,
+      timeUnitMinutes: rate.timeUnitMinutes?.toString() || '60',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateRate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCompany || !currentBranch || !editingRate) return;
+
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        name: formData.name,
+        pricingType: formData.pricingType,
+        basePrice: formData.basePrice,
+        resourceId: formData.resourceId || null,
+        categoryId: formData.categoryId || null,
+        timeUnitMinutes: formData.pricingType === 'TIME_UNIT' ? parseInt(formData.timeUnitMinutes, 10) : undefined,
+      };
+
+      await ratePlansApi.update(currentCompany.id, currentBranch.id, editingRate.id, payload);
+      setShowEditModal(false);
+      setEditingRate(null);
+      resetForm();
+      fetchData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (!currentCompany || !currentBranch) {
+    console.log('No company or branch selected, showing empty state');
     return (
       <div className="p-6">
         <EmptyState
@@ -164,12 +204,17 @@ export function RatesPage() {
                     <p className="text-sm font-medium text-[var(--ink-primary)]">{rate.name}</p>
                     <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">{scope}</p>
                     <p className="text-xs text-[var(--ink-tertiary)]">
-                      {rate.pricingType === 'TIME_UNIT'
-                        ? `${rate.basePrice} / ${rate.timeUnitMinutes} min`
-                        : `${rate.blockPrice} / ${rate.blockHours}h`}
+                      {rate.basePrice} / {rate.timeUnitMinutes} min
                     </p>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => handleEditRate(rate)}
+                      className="p-1.5 rounded hover:bg-[var(--surface-secondary)] transition-colors"
+                      title="Editar tarifa"
+                    >
+                      <Pencil className="w-4 h-4 text-[var(--ink-tertiary)]" />
+                    </button>
                     <button
                       onClick={() => handleToggleRateStatus(rate)}
                       disabled={togglingRateStatus === rate.id}
@@ -201,7 +246,7 @@ export function RatesPage() {
         title="Nueva Tarifa"
         size="md"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+<form onSubmit={handleSubmit} className="space-y-4">
           <Input
             label="Nombre"
             value={formData.name}
@@ -214,55 +259,31 @@ export function RatesPage() {
             label="Tipo de precio"
             options={[
               { value: 'TIME_UNIT', label: 'Por tiempo (hora, minutos)' },
-              { value: 'BLOCK', label: 'Bloque (paquete fijo)' },
             ]}
             value={formData.pricingType}
             onChange={(e) => setFormData({ ...formData, pricingType: e.target.value as PricingType })}
           />
 
-          {formData.pricingType === 'TIME_UNIT' ? (
-            <>
-              <Input
-                label="Precio base"
-                type="number"
-                step="0.01"
-                value={formData.basePrice}
-                onChange={(e) => setFormData({ ...formData, basePrice: e.target.value })}
-                placeholder="0.00"
-                required
-              />
-              <Select
-                label="Duración"
-                options={[
-                  { value: '30', label: '30 minutos' },
-                  { value: '60', label: '1 hora' },
-                  { value: '120', label: '2 horas' },
-                ]}
-                value={formData.timeUnitMinutes}
-                onChange={(e) => setFormData({ ...formData, timeUnitMinutes: e.target.value })}
-              />
-            </>
-          ) : (
-            <>
-              <Input
-                label="Horas del bloque"
-                type="number"
-                value={formData.blockHours}
-                onChange={(e) => setFormData({ ...formData, blockHours: e.target.value })}
-                placeholder="1"
-                required
-              />
-              <Input
-                label="Precio del bloque"
-                type="number"
-                step="0.01"
-                value={formData.blockPrice}
-                onChange={(e) => setFormData({ ...formData, blockPrice: e.target.value })}
-                placeholder="0.00"
-                required
-              />
-            </>
-          )}
+          <Input
+            label="Precio base"
+            type="number"
+            step="0.01"
+            value={formData.basePrice}
+            onChange={(e) => setFormData({ ...formData, basePrice: e.target.value })}
+            placeholder="0.00"
+            required
+          />
+
+          <Select
+            label="Duración"
+            options={[
+              { value: '30', label: '30 minutos' },
+              { value: '60', label: '1 hora' },
+              { value: '120', label: '2 horas' },
+            ]}
+            value={formData.timeUnitMinutes}
+            onChange={(e) => setFormData({ ...formData, timeUnitMinutes: e.target.value })}
+          />
 
           <Select
             label="Aplicar a (opcional)"
@@ -287,6 +308,79 @@ export function RatesPage() {
             </Button>
             <Button type="submit" isLoading={isSubmitting}>
               Crear
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => { setShowEditModal(false); setEditingRate(null); resetForm(); }}
+        title="Editar Tarifa"
+        size="md"
+      >
+        <form onSubmit={handleUpdateRate} className="space-y-4">
+          <Input
+            label="Nombre"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="Ej: Tarifa hora casual"
+            required
+          />
+
+          <Select
+            label="Tipo de precio"
+            options={[
+              { value: 'TIME_UNIT', label: 'Por tiempo (hora, minutos)' },
+            ]}
+            value={formData.pricingType}
+            onChange={(e) => setFormData({ ...formData, pricingType: e.target.value as PricingType })}
+          />
+
+          <Input
+            label="Precio base"
+            type="number"
+            step="0.01"
+            value={formData.basePrice}
+            onChange={(e) => setFormData({ ...formData, basePrice: e.target.value })}
+            placeholder="0.00"
+            required
+          />
+
+          <Select
+            label="Duración"
+            options={[
+              { value: '30', label: '30 minutos' },
+              { value: '60', label: '1 hora' },
+              { value: '120', label: '2 horas' },
+            ]}
+            value={formData.timeUnitMinutes}
+            onChange={(e) => setFormData({ ...formData, timeUnitMinutes: e.target.value })}
+          />
+
+          <Select
+            label="Aplicar a (opcional)"
+            options={[
+              { value: '', label: 'General (todas las sedes)' },
+              { value: 'resource', label: 'Recurso específico' },
+              { value: 'category', label: 'Categoría específica' },
+            ]}
+            value={formData.resourceId ? 'resource' : formData.categoryId ? 'category' : ''}
+            onChange={() => {
+              setFormData({ ...formData, resourceId: '', categoryId: '' });
+            }}
+          />
+
+          {formData.resourceId === '' && formData.categoryId === '' && (
+            <p className="text-xs text-[var(--ink-tertiary)]">La tarifa se aplicará a todos los recursos de la sede.</p>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setShowEditModal(false); setEditingRate(null); resetForm(); }}>
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isSubmitting}>
+              Guardar
             </Button>
           </div>
         </form>

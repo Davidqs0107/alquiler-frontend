@@ -22,6 +22,20 @@ export interface User {
   globalRole: GlobalRole;
   status: RecordStatus;
   createdAt: string;
+  memberships?: CompanyMembership[];
+}
+
+export interface CompanyMembership {
+  companyId: string;
+  companyName: string;
+  companyRole: MembershipRole;
+  branches: BranchMembership[];
+}
+
+export interface BranchMembership {
+  companyId: string;
+  branchId: string;
+  branchName: string;
 }
 
 export interface Company {
@@ -79,7 +93,7 @@ export interface ResourceCategory {
 export interface Resource {
   id: string;
   branchId: string;
-  categoryId: string;
+  resourceCategoryId: string;
   name: string;
   description?: string;
   status: RecordStatus;
@@ -126,7 +140,7 @@ export interface TicketItem {
   description: string;
   quantity: number;
   unitPrice: string;
-  totalPrice: string;
+  subtotal: string;
   discountAmount: string;
   status: RecordStatus;
   resourceId?: string;

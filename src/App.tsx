@@ -1,11 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuthStore } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts';
 import { AppLayout } from '@/components/layout';
 import { LoginPage, DashboardPage, ResourcesPage, RatesPage, CatalogPage, TicketsPage, ReportsPage, CreateCompanyPage, CompaniesPage, CompanyDetailPage } from '@/pages';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const isLoading = useAuthStore((s) => s.isLoading);
+  const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -23,8 +22,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const isLoading = useAuthStore((s) => s.isLoading);
+  const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (

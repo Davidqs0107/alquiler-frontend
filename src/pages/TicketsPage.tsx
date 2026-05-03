@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useCompany, useTicketStore } from '@/contexts';
 import { Button, Card, Input, Select, Modal, Badge, EmptyState } from '@/components/ui';
-import type { TicketStatus } from '@/types';
+import type { TicketStatus, Ticket } from '@/types';
 import Swal from 'sweetalert2';
+import { ticketsApi } from '@/api';
 
 const statusLabels: Record<TicketStatus, { label: string; variant: 'default' | 'success' | 'error' }> = {
   OPEN: { label: 'Abierto', variant: 'default' },
   CLOSED: { label: 'Cerrado', variant: 'success' },
   CANCELLED: { label: 'Cancelado', variant: 'error' },
 };
+
+type FilterStatus = 'ALL' | 'OPEN' | 'CLOSED' | 'CANCELLED';
 
 export function TicketsPage() {
   const { currentCompany, currentBranch } = useCompany();
@@ -29,11 +32,20 @@ export function TicketsPage() {
     registerPayment,
     closeTicket,
     cancelItem,
-    cancelTicket,
+    cancelTicket: cancelTicketStore,
     cancelTicketWithReversal,
+    setActiveTicket,
+    clearActiveTicket,
+    refreshTicket,
     clearError,
+    finishRental,
+    cancelRental,
   } = useTicketStore();
 
+  const [view, setView] = useState<'list' | 'detail'>('list');
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('OPEN');
+  const [isLoadingList, setIsLoadingList] = useState(false);
   const [showAddRentalModal, setShowAddRentalModal] = useState(false);
   const [showAddCatalogModal, setShowAddCatalogModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -44,24 +56,69 @@ export function TicketsPage() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const loadTicketList = useCallback(async () => {
+    if (!currentCompany || !currentBranch) return;
+    setIsLoadingList(true);
+    try {
+      const params: { status?: string } = {};
+      if (filterStatus !== 'ALL') {
+        params.status = filterStatus;
+      }
+      const data = await ticketsApi.list(currentCompany.id, currentBranch.id, params);
+      setTickets(data);
+    } catch (err) {
+      console.error('Error loading tickets:', err);
+    } finally {
+      setIsLoadingList(false);
+    }
+  }, [currentCompany, currentBranch, filterStatus]);
+
   const loadData = useCallback(async () => {
     if (!currentCompany || !currentBranch) return;
     await Promise.all([
-      fetchActiveTicket(currentCompany.id, currentBranch.id),
       fetchResources(currentCompany.id, currentBranch.id),
       fetchCatalogItems(currentCompany.id, currentBranch.id),
     ]);
-  }, [currentCompany, currentBranch, fetchActiveTicket, fetchResources, fetchCatalogItems]);
+  }, [currentCompany, currentBranch, fetchResources, fetchCatalogItems]);
 
   useEffect(() => {
     if (currentCompany && currentBranch) {
+      if (view === 'list') {
+        loadTicketList();
+      } else if (activeTicket) {
+        refreshTicket(currentCompany.id, currentBranch.id, activeTicket.id);
+      }
       loadData();
     }
-  }, [currentCompany, currentBranch, loadData]);
+  }, [currentCompany, currentBranch, view, filterStatus]);
 
-  const handleCreateTicket = async () => {
+  const handleOpenTicket = async () => {
     if (!currentCompany || !currentBranch) return;
-    await createTicket(currentCompany.id, currentBranch.id);
+    const ticket = await createTicket(currentCompany.id, currentBranch.id);
+    if (ticket) {
+      setActiveTicket(ticket);
+      setView('detail');
+    }
+  };
+
+  const handleSelectTicket = async (ticket: Ticket) => {
+    if (!currentCompany || !currentBranch) return;
+    setIsLoadingList(true);
+    try {
+      const fullTicket = await ticketsApi.get(currentCompany.id, currentBranch.id, ticket.id);
+      setActiveTicket(fullTicket);
+      setView('detail');
+    } catch (err) {
+      console.error('Error loading ticket:', err);
+    } finally {
+      setIsLoadingList(false);
+    }
+  };
+
+  const handleBackToList = () => {
+    clearActiveTicket();
+    setView('list');
+    loadTicketList();
   };
 
   const handleAddRental = async (e: React.FormEvent) => {
@@ -116,15 +173,28 @@ export function TicketsPage() {
   const handleCloseTicket = async () => {
     if (!currentCompany || !currentBranch || !activeTicket) return;
 
-    const activeRentals = activeTicket.items?.filter(
-      (item) => item.rentalSession && ['RESERVED', 'IN_USE'].includes(item.rentalSession.status)
+    const inUseRentals = activeTicket.items?.filter(
+      (item) => item.rentalSession && item.rentalSession.status === 'IN_USE'
     );
 
-    if (activeRentals && activeRentals.length > 0) {
+    const overdueRentals = activeTicket.items?.filter(
+      (item) => item.rentalSession && item.rentalSession.status === 'RESERVED' && new Date(item.rentalSession.scheduledEndAt) <= new Date()
+    );
+
+    if ((inUseRentals?.length ?? 0) > 0) {
       Swal.fire({
         icon: 'warning',
         title: 'No se puede cerrar',
-        text: `Hay ${activeRentals.length} alquiler(es) activos. Finalizá los alquileres primero.`,
+        text: `Hay ${inUseRentals.length} alquiler(es) en uso. Finalizá los alquileres primero.`,
+      });
+      return;
+    }
+
+    if ((overdueRentals?.length ?? 0) > 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'No se puede cerrar',
+        text: `Hay ${overdueRentals.length} alquiler(es) vencidos. Cancelá o finalizá primero.`,
       });
       return;
     }
@@ -138,6 +208,7 @@ export function TicketsPage() {
     });
     if (!result.isConfirmed) return;
     await closeTicket(currentCompany.id, currentBranch.id, activeTicket.id);
+    handleBackToList();
   };
 
   const handleCancelItem = async (itemId: string) => {
@@ -153,6 +224,33 @@ export function TicketsPage() {
     await cancelItem(currentCompany.id, currentBranch.id, activeTicket.id, itemId);
   };
 
+  const handleFinishRental = async (rentalSessionId: string) => {
+    if (!currentCompany || !currentBranch || !activeTicket) return;
+    const result = await Swal.fire({
+      icon: 'question',
+      title: '¿Finalizar este alquiler?',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, finalizar',
+      cancelButtonText: 'No',
+    });
+    if (!result.isConfirmed) return;
+    await finishRental(currentCompany.id, currentBranch.id, rentalSessionId, activeTicket.id);
+  };
+
+  const handleCancelRental = async (rentalSessionId: string) => {
+    if (!currentCompany || !currentBranch || !activeTicket) return;
+    const result = await Swal.fire({
+      icon: 'warning',
+      title: '¿Cancelar este alquiler?',
+      text: 'Esta acción no se puede deshacer.',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, cancelar',
+      cancelButtonText: 'No',
+    });
+    if (!result.isConfirmed) return;
+    await cancelRental(currentCompany.id, currentBranch.id, rentalSessionId, activeTicket.id);
+  };
+
   const handleCancelTicket = async () => {
     if (!currentCompany || !currentBranch || !activeTicket) return;
     const result = await Swal.fire({
@@ -164,7 +262,8 @@ export function TicketsPage() {
       cancelButtonText: 'No',
     });
     if (!result.isConfirmed) return;
-    await cancelTicket(currentCompany.id, currentBranch.id, activeTicket.id);
+    await cancelTicketStore(currentCompany.id, currentBranch.id, activeTicket.id);
+    handleBackToList();
   };
 
   const handleCancelTicketWithReversal = async () => {
@@ -179,10 +278,15 @@ export function TicketsPage() {
     });
     if (!result.isConfirmed) return;
     await cancelTicketWithReversal(currentCompany.id, currentBranch.id, activeTicket.id);
+    handleBackToList();
   };
 
   const hasActiveRentals = activeTicket?.items?.some(
-    (item) => item.rentalSession && ['RESERVED', 'IN_USE'].includes(item.rentalSession.status)
+    (item) => item.rentalSession && item.rentalSession.status === 'IN_USE'
+  );
+
+  const hasPendingStartRentals = activeTicket?.items?.some(
+    (item) => item.rentalSession && item.rentalSession.status === 'RESERVED' && new Date(item.rentalSession.scheduledEndAt) <= new Date()
   );
 
   const paidAmount = activeTicket?.payments?.reduce((sum, p) => sum + parseFloat(p.amount), 0) || 0;
@@ -199,50 +303,118 @@ export function TicketsPage() {
     );
   }
 
-  if (isLoading) {
+  if (view === 'list') {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin w-8 h-8 border-4 border-[var(--accent)] border-t-transparent rounded-full" />
+      <div className="p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 sm:mb-6">
+          <h1 className="text-xl sm:text-2xl font-semibold text-[var(--ink-primary)]">Tickets</h1>
+          <Button onClick={handleOpenTicket}>
+            + Nuevo Ticket
+          </Button>
+        </div>
+
+        <div className="flex gap-2 mb-4">
+          {(['ALL', 'OPEN', 'CLOSED', 'CANCELLED'] as FilterStatus[]).map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilterStatus(status)}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                filterStatus === status
+                  ? 'bg-[var(--accent)] text-white'
+                  : 'bg-[var(--surface-elevated)] text-[var(--ink-secondary)] hover:text-[var(--ink-primary)]'
+              }`}
+            >
+              {status === 'ALL' ? 'Todos' : statusLabels[status as TicketStatus]?.label}
+            </button>
+          ))}
+        </div>
+
+        {isLoadingList ? (
+          <div className="flex items-center justify-center h-40">
+            <div className="animate-spin w-8 h-8 border-4 border-[var(--accent)] border-t-transparent rounded-full" />
+          </div>
+        ) : tickets.length === 0 ? (
+          <Card padding>
+            <EmptyState
+              title="No hay tickets"
+              description={filterStatus === 'ALL' ? 'Creá un nuevo ticket para comenzar.' : `No hay tickets ${filterStatus === 'OPEN' ? 'abiertos' : filterStatus === 'CLOSED' ? 'cerrados' : 'cancelados'}.`}
+              action={filterStatus === 'ALL' ? <Button onClick={handleOpenTicket}>Crear ticket</Button> : undefined}
+            />
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {tickets.map((ticket) => (
+              <Card
+                key={ticket.id}
+                padding
+                className="cursor-pointer hover:border-[var(--accent)] transition-colors"
+                onClick={() => handleSelectTicket(ticket)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-[var(--ink-primary)]">
+                        Ticket #{ticket.ticketNumber}
+                      </p>
+                      <Badge variant={statusLabels[ticket.status as TicketStatus].variant}>
+                        {statusLabels[ticket.status as TicketStatus].label}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">
+                      Abierto: {new Date(ticket.openedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-[var(--ink-primary)]">
+                      ${parseFloat(ticket.total).toFixed(2)}
+                    </p>
+                    <p className="text-xs text-[var(--ink-tertiary)]">
+                      {ticket.status === 'OPEN' ? (
+                        ticket.payments?.length ? 'Parcialmente pago' : 'Sin pagos'
+                      ) : (
+                        ticket.status === 'CLOSED' ? 'Cerrado' : 'Cancelado'
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
 
-  return (
-    <div className="p-4 sm:p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl font-semibold text-[var(--ink-primary)]">Tickets</h1>
-        {!activeTicket && (
-          <Button onClick={handleCreateTicket}>
-            Abrir Ticket
+  if (view === 'detail' && activeTicket) {
+    return (
+      <div className="p-4 sm:p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Button variant="secondary" size="sm" onClick={handleBackToList}>
+            ← Volver
           </Button>
-        )}
-      </div>
-
-      {error && (
-        <div className="mb-4 p-4 text-sm text-[var(--error)] bg-[var(--error)]/10 rounded-md flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={clearError} className="text-[var(--error)]">×</button>
+          <div className="flex-1">
+            <h1 className="text-xl font-semibold text-[var(--ink-primary)]">
+              Ticket #{activeTicket.ticketNumber}
+            </h1>
+            <p className="text-xs text-[var(--ink-tertiary)]">
+              {activeTicket.status === 'OPEN' ? 'Abierto' : activeTicket.status === 'CLOSED' ? 'Cerrado' : 'Cancelado'} el {new Date(activeTicket.openedAt).toLocaleString()}
+            </p>
+          </div>
+          <Badge variant={statusLabels[activeTicket.status as TicketStatus].variant}>
+            {statusLabels[activeTicket.status as TicketStatus].label}
+          </Badge>
         </div>
-      )}
 
-      {activeTicket ? (
+        {error && (
+          <div className="mb-4 p-4 text-sm text-[var(--error)] bg-[var(--error)]/10 rounded-md flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={clearError} className="text-[var(--error)]">×</button>
+          </div>
+        )}
+
         <div className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-4">
             <Card padding>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-[var(--ink-primary)]">
-                    Ticket #{activeTicket.ticketNumber}
-                  </h2>
-                  <p className="text-xs text-[var(--ink-tertiary)]">
-                    Abierto: {new Date(activeTicket.openedAt).toLocaleString()}
-                  </p>
-                </div>
-                <Badge variant={statusLabels[activeTicket.status].variant}>
-                  {statusLabels[activeTicket.status].label}
-                </Badge>
-              </div>
-
               {activeTicket.status === 'OPEN' && (
                 <div className="flex flex-wrap gap-2 mb-4">
                   <Button onClick={() => setShowAddRentalModal(true)} size="sm">+ Alquiler</Button>
@@ -265,9 +437,24 @@ export function TicketsPage() {
                         <p className="text-xs text-[var(--ink-tertiary)]">
                           {item.type} · {item.quantity} × ${parseFloat(item.unitPrice).toFixed(2)}
                         </p>
+                        {item.rentalSession && (
+                          <Badge
+                            variant={item.rentalSession.status === 'IN_USE' ? 'success' : item.rentalSession.status === 'RESERVED' ? 'warning' : 'default'}
+                            className="mt-1"
+                          >
+                            {item.rentalSession.status === 'IN_USE' ? 'En uso' : item.rentalSession.status === 'RESERVED' ? 'Reservado' : item.rentalSession.status}
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-sm font-medium">${parseFloat(item.totalPrice).toFixed(2)}</span>
+                        <span className="text-sm font-medium">${parseFloat(item.subtotal).toFixed(2)}</span>
+                        {activeTicket.status === 'OPEN' && item.rentalSession && (
+                          <button onClick={() => handleFinishRental(item.rentalSession!.id)} className="text-[var(--success)] hover:text-[var(--success)]/80 p-1" title="Finalizar alquiler">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                        )}
                         {activeTicket.status === 'OPEN' && (
                           <button onClick={() => handleCancelItem(item.id)} className="text-[var(--error)] hover:text-[var(--error)]/80 p-1">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -330,7 +517,7 @@ export function TicketsPage() {
               </Button>
             )}
 
-            {activeTicket.status === 'OPEN' && hasActiveRentals && (
+            {activeTicket.status === 'OPEN' && (hasActiveRentals || hasPendingStartRentals) && (
               <div className="p-3 text-sm text-[var(--warning)] bg-[var(--warning)]/10 rounded-md">
                 Hay alquileres activos. Finalizá todos antes de cerrar.
               </div>
@@ -355,88 +542,82 @@ export function TicketsPage() {
             )}
           </div>
         </div>
-      ) : (
-        <Card padding>
-          <EmptyState
-            title="Sin ticket activo"
-            description="Abrí un nuevo ticket para comenzar una venta."
-            action={<Button onClick={handleCreateTicket}>Abrir Ticket</Button>}
-          />
-        </Card>
-      )}
 
-      <Modal isOpen={showAddRentalModal} onClose={() => setShowAddRentalModal(false)} title="Agregar Alquiler">
-        <form onSubmit={handleAddRental} className="space-y-4">
-          <Select
-            label="Recurso"
-            options={resources.map((r) => ({ value: r.id, label: r.name }))}
-            value={selectedResourceId}
-            onChange={(e) => setSelectedResourceId(e.target.value)}
-            placeholder="Seleccionar recurso"
-          />
-          <Select
-            label="Duración"
-            options={[
-              { value: '30', label: '30 minutos' },
-              { value: '60', label: '1 hora' },
-              { value: '120', label: '2 horas' },
-              { value: '180', label: '3 horas' },
-            ]}
-            value={reservedMinutes}
-            onChange={(e) => setReservedMinutes(e.target.value)}
-          />
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setShowAddRentalModal(false)}>Cancelar</Button>
-            <Button type="submit" isLoading={isSubmitting}>Agregar</Button>
-          </div>
-        </form>
-      </Modal>
+        <Modal isOpen={showAddRentalModal} onClose={() => setShowAddRentalModal(false)} title="Agregar Alquiler">
+          <form onSubmit={handleAddRental} className="space-y-4">
+            <Select
+              label="Recurso"
+              options={resources.map((r) => ({ value: r.id, label: r.name }))}
+              value={selectedResourceId}
+              onChange={(e) => setSelectedResourceId(e.target.value)}
+              placeholder="Seleccionar recurso"
+            />
+            <Select
+              label="Duración"
+              options={[
+                { value: '30', label: '30 minutos' },
+                { value: '60', label: '1 hora' },
+                { value: '120', label: '2 horas' },
+                { value: '180', label: '3 horas' },
+              ]}
+              value={reservedMinutes}
+              onChange={(e) => setReservedMinutes(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setShowAddRentalModal(false)}>Cancelar</Button>
+              <Button type="submit" isLoading={isSubmitting}>Agregar</Button>
+            </div>
+          </form>
+        </Modal>
 
-      <Modal isOpen={showAddCatalogModal} onClose={() => setShowAddCatalogModal(false)} title="Agregar Producto">
-        <form onSubmit={handleAddCatalogItem} className="space-y-4">
-          <Select
-            label="Producto/Servicio"
-            options={catalogItems.map((c) => ({ value: c.id, label: `${c.name} - $${parseFloat(c.price).toFixed(2)}` }))}
-            value={selectedCatalogItemId}
-            onChange={(e) => setSelectedCatalogItemId(e.target.value)}
-            placeholder="Seleccionar ítem"
-          />
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setShowAddCatalogModal(false)}>Cancelar</Button>
-            <Button type="submit" isLoading={isSubmitting}>Agregar</Button>
-          </div>
-        </form>
-      </Modal>
+        <Modal isOpen={showAddCatalogModal} onClose={() => setShowAddCatalogModal(false)} title="Agregar Producto">
+          <form onSubmit={handleAddCatalogItem} className="space-y-4">
+            <Select
+              label="Producto/Servicio"
+              options={catalogItems.map((c) => ({ value: c.id, label: `${c.name} - $${parseFloat(c.price).toFixed(2)}` }))}
+              value={selectedCatalogItemId}
+              onChange={(e) => setSelectedCatalogItemId(e.target.value)}
+              placeholder="Seleccionar ítem"
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setShowAddCatalogModal(false)}>Cancelar</Button>
+              <Button type="submit" isLoading={isSubmitting}>Agregar</Button>
+            </div>
+          </form>
+        </Modal>
 
-      <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} title="Registrar Pago">
-        <form onSubmit={handleRegisterPayment} className="space-y-4">
-          <Select
-            label="Método de pago"
-            options={[
-              { value: 'CASH', label: 'Efectivo' },
-              { value: 'CARD', label: 'Tarjeta' },
-              { value: 'TRANSFER', label: 'Transferencia' },
-              { value: 'DIGITAL_WALLET', label: 'Billetera digital' },
-              { value: 'OTHER', label: 'Otro' },
-            ]}
-            value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
-          />
-          <Input
-            label="Monto"
-            type="number"
-            step="0.01"
-            value={paymentAmount}
-            onChange={(e) => setPaymentAmount(e.target.value)}
-            placeholder="0.00"
-            required
-          />
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setShowPaymentModal(false)}>Cancelar</Button>
-            <Button type="submit" isLoading={isSubmitting}>Registrar</Button>
-          </div>
-        </form>
-      </Modal>
-    </div>
-  );
+        <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} title="Registrar Pago">
+          <form onSubmit={handleRegisterPayment} className="space-y-4">
+            <Select
+              label="Método de pago"
+              options={[
+                { value: 'CASH', label: 'Efectivo' },
+                { value: 'CARD', label: 'Tarjeta' },
+                { value: 'TRANSFER', label: 'Transferencia' },
+                { value: 'DIGITAL_WALLET', label: 'Billetera digital' },
+                { value: 'OTHER', label: 'Otro' },
+              ]}
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
+            />
+            <Input
+              label="Monto"
+              type="number"
+              step="0.01"
+              value={paymentAmount}
+              onChange={(e) => setPaymentAmount(e.target.value)}
+              placeholder="0.00"
+              required
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setShowPaymentModal(false)}>Cancelar</Button>
+              <Button type="submit" isLoading={isSubmitting}>Registrar</Button>
+            </div>
+          </form>
+        </Modal>
+      </div>
+    );
+  }
+
+  return null;
 }

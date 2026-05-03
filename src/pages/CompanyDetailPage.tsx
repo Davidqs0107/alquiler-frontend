@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Badge, EmptyState, Modal, Input, Select } from '@/components/ui';
-import { api } from '@/api/client';
+import { api, companiesApi } from '@/api';
+import { useAuth } from '@/contexts';
 import Swal from 'sweetalert2';
+import { Pencil, Eye, EyeOff } from 'lucide-react';
 
 type Branch = {
   id: string;
@@ -50,6 +52,8 @@ type CompanyDetail = {
 export function CompanyDetailPage() {
   const { companyId } = useParams<{ companyId: string }>();
   const navigate = useNavigate();
+  const { getMyCompanyRole } = useAuth();
+  const membershipRole = getMyCompanyRole();
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +61,14 @@ export function CompanyDetailPage() {
   const [branchMembers, setBranchMembers] = useState<BranchUser[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [showAddBranch, setShowAddBranch] = useState(false);
-  const [memberForm, setMemberForm] = useState({ email: '', password: '', role: 'CAJERO' });
+  const [showEditBranch, setShowEditBranch] = useState(false);
+  const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
+  const [editingBranchMember, setEditingBranchMember] = useState<BranchUser | null>(null);
+  const [showEditBranchMember, setShowEditBranchMember] = useState(false);
+  const [editingCompanyMember, setEditingCompanyMember] = useState<CompanyUser | null>(null);
+  const [showEditCompanyMember, setShowEditCompanyMember] = useState(false);
+  const [memberForm, setMemberForm] = useState({ email: '', password: '', role: 'CAJERO', branchId: '' as string });
+  const [companyMemberForm, setCompanyMemberForm] = useState({ role: 'CAJERO' as string });
   const [branchForm, setBranchForm] = useState({ name: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -104,7 +115,7 @@ export function CompanyDetailPage() {
     try {
       await api.post(`/companies/${companyId}/members`, memberForm);
       setShowAddMember(false);
-      setMemberForm({ email: '', password: '', role: 'CAJERO' });
+      setMemberForm({ email: '', password: '', role: 'CAJERO', branchId: '' });
       fetchCompany();
     } catch (err: any) {
       Swal.fire({
@@ -122,13 +133,15 @@ export function CompanyDetailPage() {
     if (!companyId || !selectedBranchId) return;
     setIsSubmitting(true);
     try {
+      const companyRole = memberForm.role === 'ADMIN_SEDE' ? 'CAJERO' : memberForm.role;
       await api.post(`/companies/${companyId}/branches/${selectedBranchId}/members`, {
-        ...memberForm,
-        companyRole: memberForm.role,
+        email: memberForm.email,
+        password: memberForm.password,
+        companyRole,
         branchRole: memberForm.role,
       });
       setShowAddMember(false);
-      setMemberForm({ email: '', password: '', role: 'CAJERO' });
+      setMemberForm({ email: '', password: '', role: 'CAJERO', branchId: '' });
       fetchBranchMembers(selectedBranchId);
     } catch (err: any) {
       Swal.fire({
@@ -158,6 +171,104 @@ export function CompanyDetailPage() {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleEditBranch = (branch: Branch) => {
+    setEditingBranch(branch);
+    setBranchForm({ name: branch.name });
+    setShowEditBranch(true);
+  };
+
+  const handleUpdateBranch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!companyId || !editingBranch) return;
+    setIsSubmitting(true);
+    try {
+      await companiesApi.updateBranch(companyId, editingBranch.id, { name: branchForm.name });
+      setShowEditBranch(false);
+      setEditingBranch(null);
+      setBranchForm({ name: '' });
+      fetchCompany();
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: err.response?.data?.message || 'Error al actualizar sede' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditBranchMember = (member: BranchUser) => {
+    setEditingBranchMember(member);
+    setMemberForm((prev) => ({ ...prev, role: member.role }));
+    setShowEditBranchMember(true);
+  };
+
+  const handleUpdateBranchMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!companyId || !selectedBranchId || !editingBranchMember) return;
+    setIsSubmitting(true);
+    try {
+      const updateData: { role?: string; branchId?: string } = { role: memberForm.role };
+      if (memberForm.branchId && memberForm.branchId !== selectedBranchId) {
+        updateData.branchId = memberForm.branchId;
+      }
+      await companiesApi.updateBranchMember(companyId, selectedBranchId, editingBranchMember.id, updateData);
+      setShowEditBranchMember(false);
+      setEditingBranchMember(null);
+      setMemberForm({ email: '', password: '', role: 'CAJERO', branchId: '' });
+      fetchCompany();
+      if (selectedBranchId) fetchBranchMembers(selectedBranchId);
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: err.response?.data?.message || 'Error al actualizar miembro' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleBranchMemberStatus = async (member: BranchUser) => {
+    if (!companyId || !selectedBranchId) return;
+    try {
+      await companiesApi.updateBranchMember(companyId, selectedBranchId, member.id, {
+        status: member.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      });
+      if (selectedBranchId) fetchBranchMembers(selectedBranchId);
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: err.response?.data?.message || 'Error al cambiar estado' });
+    }
+  };
+
+  const handleEditCompanyMember = (member: CompanyUser) => {
+    setEditingCompanyMember(member);
+    setCompanyMemberForm({ role: member.role });
+    setShowEditCompanyMember(true);
+  };
+
+  const handleUpdateCompanyMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!companyId || !editingCompanyMember) return;
+    setIsSubmitting(true);
+    try {
+      await companiesApi.updateMember(companyId, editingCompanyMember.id, { role: companyMemberForm.role });
+      setShowEditCompanyMember(false);
+      setEditingCompanyMember(null);
+      setCompanyMemberForm({ role: 'CAJERO' });
+      fetchCompany();
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: err.response?.data?.message || 'Error al actualizar miembro' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleCompanyMemberStatus = async (member: CompanyUser) => {
+    if (!companyId) return;
+    try {
+      await companiesApi.updateMember(companyId, member.id, {
+        status: member.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      });
+      fetchCompany();
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: err.response?.data?.message || 'Error al cambiar estado' });
     }
   };
 
@@ -205,7 +316,7 @@ export function CompanyDetailPage() {
           <Card padding>
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-medium text-[var(--ink-primary)]">Sedes</h2>
-              <Button variant="secondary" className="text-xs" onClick={() => setShowAddBranch(true)} size="sm">
+              <Button variant="secondary" className="text-xs" onClick={() => { setBranchForm({ name: '' }); setShowAddBranch(true); }} size="sm">
                 + Agregar
               </Button>
             </div>
@@ -214,34 +325,70 @@ export function CompanyDetailPage() {
             ) : (
               <div className="space-y-2">
                 {company.branches.map((branch) => (
-                  <button
-                    key={branch.id}
-                    onClick={() => setSelectedBranchId(branch.id)}
-                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
-                      selectedBranchId === branch.id
-                        ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
-                        : 'hover:bg-[var(--surface-elevated)] text-[var(--ink-secondary)]'
-                    }`}
-                  >
-                    {branch.name}
-                  </button>
+                  <div key={branch.id} className="flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => setSelectedBranchId(branch.id)}
+                      className={`flex-1 text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                        selectedBranchId === branch.id
+                          ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
+                          : 'hover:bg-[var(--surface-elevated)] text-[var(--ink-secondary)]'
+                      }`}
+                    >
+                      {branch.name}
+                      <span className="ml-1 text-xs text-[var(--ink-tertiary)]">{branch.status === 'ACTIVE' ? '' : branch.status}</span>
+                    </button>
+                    <button
+                      onClick={() => handleEditBranch(branch)}
+                      className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"
+                      title="Editar sede"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-[var(--ink-tertiary)]" />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
           </Card>
 
-          <Card padding>
-            <h2 className="font-medium text-[var(--ink-primary)] mb-3">Miembros de Empresa</h2>
+          {membershipRole !== 'ADMIN_SEDE' && (
+            <Card padding>
+              <h2 className="font-medium text-[var(--ink-primary)] mb-3">Miembros de Empresa</h2>
             {company.users.length === 0 ? (
               <p className="text-sm text-[var(--ink-tertiary)]">No hay miembros</p>
             ) : (
               <div className="space-y-3">
                 {company.users.map((membership) => (
-                  <div key={membership.id} className="text-sm">
-                    <p className="text-[var(--ink-primary)]">{membership.user.email}</p>
-                    <Badge variant="info" className="mt-1">
-                      {membership.role.replace('_', ' ')}
-                    </Badge>
+                  <div key={membership.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-[var(--surface-base)] rounded-md">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[var(--ink-primary)] truncate">{membership.user.email}</p>
+                      <p className="text-xs text-[var(--ink-tertiary)]">
+                        Desde {new Date(membership.createdAt).toLocaleDateString('es-AR')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Badge variant={membership.status === 'ACTIVE' ? 'success' : 'default'}>
+                        {membership.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}
+                      </Badge>
+                      <Badge variant="info">{membership.role.replace('_', ' ')}</Badge>
+                      <button
+                        onClick={() => handleEditCompanyMember(membership)}
+                        className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"
+                        title="Editar rol"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-[var(--ink-tertiary)]" />
+                      </button>
+                      <button
+                        onClick={() => handleToggleCompanyMemberStatus(membership)}
+                        className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"
+                        title={membership.status === 'ACTIVE' ? 'Deshabilitar' : 'Habilitar'}
+                      >
+                        {membership.status === 'ACTIVE' ? (
+                          <Eye className="w-3.5 h-3.5 text-[var(--success)]" />
+                        ) : (
+                          <EyeOff className="w-3.5 h-3.5 text-[var(--warning)]" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -254,6 +401,7 @@ export function CompanyDetailPage() {
               + Agregar Miembro
             </Button>
           </Card>
+          )}
         </div>
 
         <div className="lg:col-span-2">
@@ -279,17 +427,40 @@ export function CompanyDetailPage() {
                     {branchMembers.map((membership) => (
                       <div
                         key={membership.id}
-                        className="flex items-center justify-between p-3 bg-[var(--surface-base)] rounded-md"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-[var(--surface-base)] rounded-md"
                       >
-                        <div>
-                          <p className="text-sm font-medium text-[var(--ink-primary)]">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-[var(--ink-primary)] truncate">
                             {membership.user.email}
                           </p>
                           <p className="text-xs text-[var(--ink-tertiary)]">
                             Desde {new Date(membership.createdAt).toLocaleDateString('es-AR')}
                           </p>
                         </div>
-                        <Badge variant="info">{membership.role.replace('_', ' ')}</Badge>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Badge variant={membership.status === 'ACTIVE' ? 'success' : 'default'}>
+                            {membership.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                          <Badge variant="info">{membership.role.replace('_', ' ')}</Badge>
+                          <button
+                            onClick={() => handleEditBranchMember(membership)}
+                            className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"
+                            title="Editar rol"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-[var(--ink-tertiary)]" />
+                          </button>
+                          <button
+                            onClick={() => handleToggleBranchMemberStatus(membership)}
+                            className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"
+                            title={membership.status === 'ACTIVE' ? 'Deshabilitar' : 'Habilitar'}
+                          >
+                            {membership.status === 'ACTIVE' ? (
+                              <Eye className="w-3.5 h-3.5 text-[var(--success)]" />
+                            ) : (
+                              <EyeOff className="w-3.5 h-3.5 text-[var(--warning)]" />
+                            )}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -323,14 +494,22 @@ export function CompanyDetailPage() {
             required
           />
 <Select
-              label="Rol"
+              label={selectedBranchId ? "Rol en Sucursal" : "Rol en Empresa"}
               value={memberForm.role}
               onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value })}
-              options={[
-                { value: 'CAJERO', label: 'Cajero' },
-                { value: 'RECEPCION', label: 'Recepción' },
-                { value: 'ADMIN_EMPRESA', label: 'Admin Empresa' },
-              ]}
+              options={
+                selectedBranchId
+                  ? [
+                      { value: 'CAJERO', label: 'Cajero' },
+                      { value: 'RECEPCION', label: 'Recepción' },
+                      { value: 'ADMIN_SEDE', label: 'Admin Sede' },
+                    ]
+                  : [
+                      { value: 'CAJERO', label: 'Cajero' },
+                      { value: 'RECEPCION', label: 'Recepción' },
+                      { value: 'ADMIN_EMPRESA', label: 'Admin Empresa' },
+                    ]
+              }
             />
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setShowAddMember(false)}>
@@ -358,6 +537,91 @@ export function CompanyDetailPage() {
             </Button>
             <Button type="submit" isLoading={isSubmitting}>
               Crear
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showEditBranch} onClose={() => { setShowEditBranch(false); setEditingBranch(null); setBranchForm({ name: '' }); }} title="Editar Sede">
+        <form onSubmit={handleUpdateBranch} className="space-y-4">
+          <Input
+            label="Nombre de la Sede"
+            value={branchForm.name}
+            onChange={(e) => setBranchForm({ name: e.target.value })}
+            placeholder="Ej: Sucursal Centro"
+            required
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setShowEditBranch(false); setEditingBranch(null); setBranchForm({ name: '' }); }}>
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isSubmitting}>
+              Guardar
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showEditBranchMember} onClose={() => { setShowEditBranchMember(false); setEditingBranchMember(null); setMemberForm({ email: '', password: '', role: 'CAJERO', branchId: '' }); }} title="Editar Miembro de Sede">
+        <form onSubmit={handleUpdateBranchMember} className="space-y-4">
+          {editingBranchMember && (
+            <p className="text-sm text-[var(--ink-secondary)]">Editando: {editingBranchMember.user.email}</p>
+          )}
+          <Select
+            label="Rol en Sucursal"
+            value={memberForm.role}
+            onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value })}
+            options={[
+              { value: 'CAJERO', label: 'Cajero' },
+              { value: 'RECEPCION', label: 'Recepción' },
+              { value: 'ADMIN_SEDE', label: 'Admin Sede' },
+            ]}
+          />
+          {company && selectedBranchId && (
+            <Select
+              label="Mover a Sucursal"
+              value={selectedBranchId}
+              onChange={(e) => {
+                const targetBranchId = e.target.value;
+                if (targetBranchId !== selectedBranchId) {
+                  setMemberForm((prev) => ({ ...prev, branchId: targetBranchId }));
+                }
+              }}
+              options={company.branches.map((b) => ({ value: b.id, label: b.name }))}
+            />
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setShowEditBranchMember(false); setEditingBranchMember(null); setMemberForm({ email: '', password: '', role: 'CAJERO', branchId: '' }); }}>
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isSubmitting}>
+              Guardar
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showEditCompanyMember} onClose={() => { setShowEditCompanyMember(false); setEditingCompanyMember(null); setCompanyMemberForm({ role: 'CAJERO' }); }} title="Editar Miembro de Empresa">
+        <form onSubmit={handleUpdateCompanyMember} className="space-y-4">
+          {editingCompanyMember && (
+            <p className="text-sm text-[var(--ink-secondary)]">Editando: {editingCompanyMember.user.email}</p>
+          )}
+          <Select
+            label="Rol en Empresa"
+            value={companyMemberForm.role}
+            onChange={(e) => setCompanyMemberForm({ role: e.target.value })}
+            options={[
+              { value: 'CAJERO', label: 'Cajero' },
+              { value: 'RECEPCION', label: 'Recepción' },
+              { value: 'ADMIN_EMPRESA', label: 'Admin Empresa' },
+            ]}
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setShowEditCompanyMember(false); setEditingCompanyMember(null); setCompanyMemberForm({ role: 'CAJERO' }); }}>
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isSubmitting}>
+              Guardar
             </Button>
           </div>
         </form>

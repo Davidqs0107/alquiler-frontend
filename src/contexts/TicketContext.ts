@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Ticket, Resource, SaleCatalogItem } from '@/types';
-import { ticketsApi, resourcesApi, catalogApi } from '@/api';
+import { ticketsApi, resourcesApi, catalogApi, rentalsApi } from '@/api';
 import { getErrorMessage } from '@/api/client';
 
 interface TicketState {
@@ -27,8 +27,11 @@ interface TicketActions {
   cancelTicketWithReversal: (companyId: string, branchId: string, ticketId: string) => Promise<void>;
   reversePayment: (companyId: string, branchId: string, ticketId: string, paymentId: string, amount?: string) => Promise<void>;
   refreshTicket: (companyId: string, branchId: string, ticketId: string) => Promise<void>;
+  setActiveTicket: (ticket: Ticket | null) => void;
   clearActiveTicket: () => void;
   clearError: () => void;
+  finishRental: (companyId: string, branchId: string, rentalSessionId: string, ticketId: string) => Promise<void>;
+  cancelRental: (companyId: string, branchId: string, rentalSessionId: string, ticketId: string) => Promise<void>;
 }
 
 export const useTicketStore = create<TicketState & TicketActions>((set, get) => ({
@@ -75,8 +78,9 @@ export const useTicketStore = create<TicketState & TicketActions>((set, get) => 
     set({ error: null });
     try {
       const ticket = await ticketsApi.create(companyId, branchId);
-      set({ activeTicket: ticket });
-      return ticket;
+      const fullTicket = await ticketsApi.get(companyId, branchId, ticket.id);
+      set({ activeTicket: fullTicket });
+      return fullTicket;
     } catch (err) {
       set({ error: getErrorMessage(err) });
       return null;
@@ -90,6 +94,26 @@ export const useTicketStore = create<TicketState & TicketActions>((set, get) => 
         resourceId,
         reservedMinutes: minutes,
       });
+      await get().refreshTicket(companyId, branchId, ticketId);
+    } catch (err) {
+      set({ error: getErrorMessage(err) });
+    }
+  },
+
+  finishRental: async (companyId: string, branchId: string, rentalSessionId: string, ticketId: string) => {
+    set({ error: null });
+    try {
+      await rentalsApi.finish(companyId, branchId, rentalSessionId);
+      await get().refreshTicket(companyId, branchId, ticketId);
+    } catch (err) {
+      set({ error: getErrorMessage(err) });
+    }
+  },
+
+  cancelRental: async (companyId: string, branchId: string, rentalSessionId: string, ticketId: string) => {
+    set({ error: null });
+    try {
+      await rentalsApi.cancel(companyId, branchId, rentalSessionId);
       await get().refreshTicket(companyId, branchId, ticketId);
     } catch (err) {
       set({ error: getErrorMessage(err) });
@@ -202,6 +226,7 @@ export const useTicketStore = create<TicketState & TicketActions>((set, get) => 
   },
 
   clearActiveTicket: () => set({ activeTicket: null }),
+  setActiveTicket: (ticket) => set({ activeTicket: ticket }),
   clearError: () => set({ error: null }),
 }));
 

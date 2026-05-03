@@ -1,3 +1,3 @@
-export { useAuthStore, useAuth } from './AuthContext';
-export { useCompanyStore, useCompany } from './CompanyContext';
+export { useAuth } from './AuthContext';
+export { useCompany } from './CompanyContext';
 export { useTicketStore, useTickets } from './TicketContext';

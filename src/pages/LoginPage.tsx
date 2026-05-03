@@ -1,21 +1,41 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts';
+import { useAuth, useCompany } from '@/contexts';
 import { Button, Input, Card } from '@/components/ui';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { login, error, clearError, isLoading } = useAuth();
+  const { autoSetCompany } = useCompany();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     clearError();
     try {
-      await login({ email, password });
-      navigate('/dashboard');
-    } catch {
+      const fullUser = await login({ email, password });
+
+      const membership = fullUser.memberships?.[0];
+      const role = membership?.companyRole;
+      const companyId = membership?.companyId;
+      const branches = membership?.branches || [];
+
+      if (role === 'ADMIN_EMPRESA') {
+        if (companyId) {
+          await autoSetCompany(companyId);
+          navigate('/dashboard');
+        } else {
+          navigate('/dashboard');
+        }
+      } else if (branches.length === 1 && companyId) {
+        await autoSetCompany(companyId, branches[0].branchId);
+        navigate('/dashboard');
+      } else {
+        navigate('/dashboard');
+      }
+    } catch (err) {
+      console.error('[Login] error:', err);
     }
   };
 

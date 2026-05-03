@@ -91,6 +91,31 @@ export const companiesApi = {
     const response = await api.get(`/companies/${companyId}/branches/${branchId}/members`);
     return response.data;
   },
+
+  update: async (companyId: string, data: { name?: string; slug?: string; status?: string }) => {
+    const response = await api.put(`/companies/${companyId}`, data);
+    return response.data;
+  },
+
+  updateBranch: async (companyId: string, branchId: string, data: { name?: string; status?: string }) => {
+    const response = await api.put(`/companies/${companyId}/branches/${branchId}`, data);
+    return response.data;
+  },
+
+  updateMember: async (companyId: string, membershipId: string, data: { role?: string; status?: string }) => {
+    const response = await api.put(`/companies/${companyId}/members/${membershipId}`, data);
+    return response.data;
+  },
+
+  updateBranchMember: async (
+    companyId: string,
+    branchId: string,
+    membershipId: string,
+    data: { role?: string; status?: string; branchId?: string }
+  ) => {
+    const response = await api.put(`/companies/${companyId}/branches/${branchId}/members/${membershipId}`, data);
+    return response.data;
+  },
 };
 
 export const categoriesApi = {
@@ -116,6 +141,18 @@ export const categoriesApi = {
     );
     return response.data;
   },
+
+  update: async (
+    companyId: string,
+    categoryId: string,
+    data: { name?: string; description?: string | null }
+  ) => {
+    const response = await api.put(
+      `/companies/${companyId}/categories/${categoryId}`,
+      data
+    );
+    return response.data;
+  },
 };
 
 export const resourcesApi = {
@@ -130,7 +167,7 @@ export const resourcesApi = {
   create: async (
     companyId: string,
     branchId: string,
-    data: { categoryId: string; name: string; description?: string }
+    data: { resourceCategoryId: string; name: string; description?: string }
   ) => {
     const response = await api.post(
       `/companies/${companyId}/branches/${branchId}/resources`,
@@ -148,6 +185,19 @@ export const resourcesApi = {
     const response = await api.patch(
       `/companies/${companyId}/branches/${branchId}/resources/${resourceId}/status`,
       { status }
+    );
+    return response.data;
+  },
+
+  update: async (
+    companyId: string,
+    branchId: string,
+    resourceId: string,
+    data: { name?: string; description?: string | null; resourceCategoryId?: string }
+  ) => {
+    const response = await api.put(
+      `/companies/${companyId}/branches/${branchId}/resources/${resourceId}`,
+      data
     );
     return response.data;
   },
@@ -191,6 +241,26 @@ export const ratePlansApi = {
     const response = await api.patch(
       `/companies/${companyId}/branches/${branchId}/rate-plans/${ratePlanId}/status`,
       { status }
+    );
+    return response.data;
+  },
+
+  update: async (
+    companyId: string,
+    branchId: string,
+    ratePlanId: string,
+    data: {
+      name?: string;
+      pricingType?: 'BLOCK' | 'TIME_UNIT';
+      basePrice?: string;
+      timeUnitMinutes?: number;
+      resourceId?: string | null;
+      categoryId?: string | null;
+    }
+  ) => {
+    const response = await api.put(
+      `/companies/${companyId}/branches/${branchId}/rate-plans/${ratePlanId}`,
+      data
     );
     return response.data;
   },
