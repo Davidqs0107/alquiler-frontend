@@ -133,12 +133,10 @@ export function CompanyDetailPage() {
     if (!companyId || !selectedBranchId) return;
     setIsSubmitting(true);
     try {
-      const companyRole = memberForm.role === 'ADMIN_SEDE' ? 'CAJERO' : memberForm.role;
       await api.post(`/companies/${companyId}/branches/${selectedBranchId}/members`, {
         email: memberForm.email,
         password: memberForm.password,
-        companyRole,
-        branchRole: memberForm.role,
+        role: memberForm.role,
       });
       setShowAddMember(false);
       setMemberForm({ email: '', password: '', role: 'CAJERO', branchId: '' });
@@ -199,7 +197,6 @@ export function CompanyDetailPage() {
 
   const handleEditBranchMember = (member: BranchUser) => {
     setEditingBranchMember(member);
-    setMemberForm((prev) => ({ ...prev, role: member.role }));
     setShowEditBranchMember(true);
   };
 
@@ -208,7 +205,7 @@ export function CompanyDetailPage() {
     if (!companyId || !selectedBranchId || !editingBranchMember) return;
     setIsSubmitting(true);
     try {
-      const updateData: { role?: string; branchId?: string } = { role: memberForm.role };
+      const updateData: { branchId?: string } = {};
       if (memberForm.branchId && memberForm.branchId !== selectedBranchId) {
         updateData.branchId = memberForm.branchId;
       }
@@ -441,11 +438,10 @@ export function CompanyDetailPage() {
                           <Badge variant={membership.status === 'ACTIVE' ? 'success' : 'default'}>
                             {membership.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}
                           </Badge>
-                          <Badge variant="info">{membership.role.replace('_', ' ')}</Badge>
                           <button
                             onClick={() => handleEditBranchMember(membership)}
                             className="p-1.5 rounded hover:bg-[var(--surface-elevated)] transition-colors"
-                            title="Editar rol"
+                            title="Editar"
                           >
                             <Pencil className="w-3.5 h-3.5 text-[var(--ink-tertiary)]" />
                           </button>
@@ -494,20 +490,21 @@ export function CompanyDetailPage() {
             required
           />
 <Select
-              label={selectedBranchId ? "Rol en Sucursal" : "Rol en Empresa"}
+              label="Rol"
               value={memberForm.role}
               onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value })}
               options={
                 selectedBranchId
                   ? [
+                      { value: 'ADMIN_SEDE', label: 'Admin Sede' },
                       { value: 'CAJERO', label: 'Cajero' },
                       { value: 'RECEPCION', label: 'Recepción' },
-                      { value: 'ADMIN_SEDE', label: 'Admin Sede' },
                     ]
                   : [
+                      { value: 'ADMIN_EMPRESA', label: 'Admin Empresa' },
+                      { value: 'ADMIN_SEDE', label: 'Admin Sede' },
                       { value: 'CAJERO', label: 'Cajero' },
                       { value: 'RECEPCION', label: 'Recepción' },
-                      { value: 'ADMIN_EMPRESA', label: 'Admin Empresa' },
                     ]
               }
             />
@@ -567,16 +564,6 @@ export function CompanyDetailPage() {
           {editingBranchMember && (
             <p className="text-sm text-[var(--ink-secondary)]">Editando: {editingBranchMember.user.email}</p>
           )}
-          <Select
-            label="Rol en Sucursal"
-            value={memberForm.role}
-            onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value })}
-            options={[
-              { value: 'CAJERO', label: 'Cajero' },
-              { value: 'RECEPCION', label: 'Recepción' },
-              { value: 'ADMIN_SEDE', label: 'Admin Sede' },
-            ]}
-          />
           {company && selectedBranchId && (
             <Select
               label="Mover a Sucursal"

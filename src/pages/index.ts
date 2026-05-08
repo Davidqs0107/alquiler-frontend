@@ -8,3 +8,4 @@ export { ReportsPage } from './ReportsPage';
 export { CreateCompanyPage } from './CreateCompanyPage';
 export { CompaniesPage } from './CompaniesPage';
 export { CompanyDetailPage } from './CompanyDetailPage';
+export { CustomersPage } from './CustomersPage';

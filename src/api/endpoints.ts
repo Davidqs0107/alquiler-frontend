@@ -20,6 +20,8 @@ import type {
   AddExtraRequest,
   RegisterPaymentRequest,
   RegisterPaymentResponse,
+  Customer,
+  ResourceBlockout,
 } from '@/types';
 import type { RecordStatus } from '@/types';
 
@@ -115,6 +117,34 @@ export const companiesApi = {
   ) => {
     const response = await api.put(`/companies/${companyId}/branches/${branchId}/members/${membershipId}`, data);
     return response.data;
+  },
+};
+
+export const customersApi = {
+  list: async (companyId: string): Promise<Customer[]> => {
+    const response = await api.get<{ data: Customer[] } | Customer[]>(`/companies/${companyId}/customers`);
+    const raw = response.data;
+    const list = Array.isArray(raw) ? raw : (raw as any)?.data;
+    return Array.isArray(list) ? list : [];
+  },
+
+  get: async (companyId: string, customerId: string): Promise<Customer> => {
+    const response = await api.get<Customer>(`/companies/${companyId}/customers/${customerId}`);
+    return response.data;
+  },
+
+  create: async (companyId: string, data: { name: string; email?: string; phone?: string; notes?: string }) => {
+    const response = await api.post(`/companies/${companyId}/customers`, data);
+    return response.data;
+  },
+
+  update: async (companyId: string, customerId: string, data: { name?: string; email?: string; phone?: string; notes?: string; status?: string }) => {
+    const response = await api.put(`/companies/${companyId}/customers/${customerId}`, data);
+    return response.data;
+  },
+
+  delete: async (companyId: string, customerId: string) => {
+    await api.delete(`/companies/${companyId}/customers/${customerId}`);
   },
 };
 
@@ -486,10 +516,46 @@ export const rentalsApi = {
     return response.data;
   },
 
+  startSession: async (companyId: string, branchId: string, rentalSessionId: string) => {
+    const response = await api.post(
+      `/companies/${companyId}/branches/${branchId}/rentals/${rentalSessionId}/start`
+    );
+    return response.data;
+  },
+
   cancel: async (companyId: string, branchId: string, rentalSessionId: string) => {
     const response = await api.post(
       `/companies/${companyId}/branches/${branchId}/rentals/${rentalSessionId}/cancel`
     );
     return response.data;
+  },
+
+  extend: async (
+    companyId: string,
+    branchId: string,
+    rentalSessionId: string,
+    data: { additionalMinutes: number; isOvertime: boolean }
+  ) => {
+    const response = await api.post(
+      `/companies/${companyId}/branches/${branchId}/rentals/${rentalSessionId}/extend`,
+      data
+    );
+    return response.data;
+  },
+};
+
+export const blockoutsApi = {
+  list: async (companyId: string, branchId: string, params?: { resourceId?: string; limit?: number; offset?: number }): Promise<ResourceBlockout[]> => {
+    const response = await api.get<ResourceBlockout[]>(`/companies/${companyId}/branches/${branchId}/blockouts`, { params });
+    return response.data;
+  },
+
+  create: async (companyId: string, branchId: string, data: { resourceId: string; startAt: string; endAt: string; reason: string }) => {
+    const response = await api.post(`/companies/${companyId}/branches/${branchId}/blockouts`, data);
+    return response.data;
+  },
+
+  delete: async (companyId: string, branchId: string, blockoutId: string) => {
+    await api.delete(`/companies/${companyId}/branches/${branchId}/blockouts/${blockoutId}`);
   },
 };

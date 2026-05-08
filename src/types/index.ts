@@ -59,7 +59,6 @@ export interface CompanyUser {
 
 export interface BranchUser {
   id: string;
-  role: MembershipRole;
   status: RecordStatus;
   createdAt: string;
   updatedAt: string;
@@ -96,9 +95,23 @@ export interface Resource {
   resourceCategoryId: string;
   name: string;
   description?: string;
+  image?: string;
+  maxCapacity?: number;
+  location?: string;
   status: RecordStatus;
   createdAt: string;
   category?: ResourceCategory;
+}
+
+export interface Customer {
+  id: string;
+  companyId: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  status: RecordStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RatePlan {
@@ -154,6 +167,7 @@ export interface RentalSession {
   id: string;
   resourceId: string;
   ticketItemId?: string;
+  customerId?: string;
   status: RentalSessionStatus;
   startAt?: string;
   scheduledEndAt?: string;
@@ -165,6 +179,20 @@ export interface RentalSession {
   notes?: string;
   createdAt: string;
   resource?: Resource;
+  customer?: { id: string; name: string };
+  extensions?: RentalExtension[];
+}
+
+export interface RentalExtension {
+  minutes: number;
+  isOvertime: boolean;
+  extendedAt: string;
+  amount: number;
+}
+
+export interface ExtendRentalRequest {
+  additionalMinutes: number;
+  isOvertime: boolean;
 }
 
 export interface Payment {
@@ -250,6 +278,7 @@ export interface AddRentalToTicketRequest {
   reservedMinutes: number;
   startAt?: string;
   notes?: string;
+  customerId?: string;
 }
 
 export interface AddCatalogItemRequest {
@@ -286,4 +315,14 @@ export interface RegisterPaymentResponse {
 export interface ApiError {
   message: string;
   details?: string;
+}
+
+export interface ResourceBlockout {
+  id: string;
+  resourceId: string;
+  startAt: string;
+  endAt: string;
+  reason: string;
+  createdAt: string;
+  resource?: { id: string; name: string };
 }

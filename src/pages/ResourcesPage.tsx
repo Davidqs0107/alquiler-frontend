@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '@/contexts';
-import { categoriesApi, resourcesApi, extractData, extractMeta } from '@/api';
+import { categoriesApi, resourcesApi, blockoutsApi, extractData, extractMeta } from '@/api';
 import { Button, Card, CardHeader, CardTitle, Input, Select, Modal, Badge, EmptyState, Pagination } from '@/components/ui';
-import type { ResourceCategory, Resource } from '@/types';
+import type { ResourceCategory, Resource, ResourceBlockout } from '@/types';
 import { getErrorMessage } from '@/api/client';
 import { Eye, EyeOff, Pencil } from 'lucide-react';
 
@@ -32,6 +32,15 @@ export function ResourcesPage() {
   const [categoryOffset, setCategoryOffset] = useState<number | null>(0);
   const [categoryTotal, setCategoryTotal] = useState(0);
   const [resourceOffset, setResourceOffset] = useState<number | null>(0);
+  const [blockouts, setBlockouts] = useState<ResourceBlockout[]>([]);
+  const [showBlockoutModal, setShowBlockoutModal] = useState(false);
+  const [blockoutResourceId, setBlockoutResourceId] = useState('');
+  const [blockoutStartDate, setBlockoutStartDate] = useState('');
+  const [blockoutStartTime, setBlockoutStartTime] = useState('');
+  const [blockoutEndDate, setBlockoutEndDate] = useState('');
+  const [blockoutEndTime, setBlockoutEndTime] = useState('');
+  const [blockoutReason, setBlockoutReason] = useState('');
+  const [isSubmittingBlockout, setIsSubmittingBlockout] = useState(false);
 
   const getVisibilityForCurrentBranch = useCallback(
     (category: ResourceCategory): boolean => {
@@ -102,13 +111,23 @@ export function ResourcesPage() {
     }
   }, [currentCompany, currentBranch]);
 
+  const fetchBlockouts = useCallback(async () => {
+    if (!currentCompany || !currentBranch) return;
+    try {
+      const data = await blockoutsApi.list(currentCompany.id, currentBranch.id);
+      setBlockouts(data);
+    } catch (err) {
+      console.error('Error fetching blockouts:', err);
+    }
+  }, [currentCompany, currentBranch]);
+
   useEffect(() => {
     if (currentCompany && currentBranch) {
       setIsLoading(true);
-      Promise.all([fetchCategories(0), fetchResources(0)])
+      Promise.all([fetchCategories(0), fetchResources(0), fetchBlockouts()])
         .finally(() => setIsLoading(false));
     }
-  }, [currentCompany, currentBranch, fetchCategories, fetchResources]);
+  }, [currentCompany, currentBranch, fetchCategories, fetchResources, fetchBlockouts]);
 
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -240,6 +259,9 @@ export function ResourcesPage() {
           </Button>
           <Button onClick={() => setShowResourceModal(true)} size="sm">
             Nuevo Recurso
+          </Button>
+          <Button onClick={() => setShowBlockoutModal(true)} variant="secondary" size="sm">
+            Bloquear Horario
           </Button>
         </div>
       </div>
@@ -539,6 +561,158 @@ export function ResourcesPage() {
           </div>
         </form>
       </Modal>
+
+      <Modal
+        isOpen={showBlockoutModal}
+        onClose={() => {
+          setShowBlockoutModal(false);
+          setBlockoutResourceId('');
+          setBlockoutStartDate('');
+          setBlockoutStartTime('');
+          setBlockoutEndDate('');
+          setBlockoutEndTime('');
+          setBlockoutReason('');
+        }}
+        title="Bloquear Horario"
+      >
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!currentCompany || !currentBranch || !blockoutResourceId || !blockoutStartDate || !blockoutStartTime || !blockoutEndDate || !blockoutEndTime || !blockoutReason) return;
+            setIsSubmittingBlockout(true);
+            try {
+              const startAt = `${blockoutStartDate}T${blockoutStartTime}:00.000Z`;
+              const endAt = `${blockoutEndDate}T${blockoutEndTime}:00.000Z`;
+              await blockoutsApi.create(currentCompany.id, currentBranch.id, {
+                resourceId: blockoutResourceId,
+                startAt,
+                endAt,
+                reason: blockoutReason,
+              });
+              setShowBlockoutModal(false);
+              setBlockoutResourceId('');
+              setBlockoutStartDate('');
+              setBlockoutStartTime('');
+              setBlockoutEndDate('');
+              setBlockoutEndTime('');
+              setBlockoutReason('');
+              fetchBlockouts();
+            } catch (err) {
+              setError(getErrorMessage(err));
+            } finally {
+              setIsSubmittingBlockout(false);
+            }
+          }}
+          className="space-y-4"
+        >
+          <Select
+            label="Recurso"
+            options={resources.map((r) => ({ value: r.id, label: r.name }))}
+            value={blockoutResourceId}
+            onChange={(e) => setBlockoutResourceId(e.target.value)}
+            placeholder="Seleccionar recurso"
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Fecha inicio"
+              type="date"
+              value={blockoutStartDate}
+              onChange={(e) => setBlockoutStartDate(e.target.value)}
+              required
+            />
+            <Input
+              label="Hora inicio"
+              type="time"
+              value={blockoutStartTime}
+              onChange={(e) => setBlockoutStartTime(e.target.value)}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Fecha fin"
+              type="date"
+              value={blockoutEndDate}
+              onChange={(e) => setBlockoutEndDate(e.target.value)}
+              required
+            />
+            <Input
+              label="Hora fin"
+              type="time"
+              value={blockoutEndTime}
+              onChange={(e) => setBlockoutEndTime(e.target.value)}
+              required
+            />
+          </div>
+          <Input
+            label="Motivo"
+            value={blockoutReason}
+            onChange={(e) => setBlockoutReason(e.target.value)}
+            placeholder="Ej: Mantenimiento, evento privado"
+            required
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowBlockoutModal(false);
+                setBlockoutResourceId('');
+                setBlockoutStartDate('');
+                setBlockoutStartTime('');
+                setBlockoutEndDate('');
+                setBlockoutEndTime('');
+                setBlockoutReason('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" isLoading={isSubmittingBlockout}>
+              Crear Bloqueo
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {blockouts.length > 0 && (
+        <Card padding className="mt-6">
+          <CardHeader>
+            <CardTitle>Horarios Bloqueados</CardTitle>
+          </CardHeader>
+          <div className="space-y-2">
+            {blockouts.map((blockout) => {
+              const start = new Date(blockout.startAt);
+              const end = new Date(blockout.endAt);
+              return (
+                <div key={blockout.id} className="flex items-center justify-between p-3 border border-[var(--border-subtle)] rounded-md">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[var(--ink-primary)]">{blockout.resource?.name || 'Recurso eliminado'}</p>
+                    <p className="text-xs text-[var(--ink-tertiary)]">
+                      {start.toLocaleDateString('es-AR')} · {start.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    <p className="text-xs text-[var(--ink-secondary)] mt-0.5">{blockout.reason}</p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={async () => {
+                      if (!currentCompany || !currentBranch) return;
+                      try {
+                        await blockoutsApi.delete(currentCompany.id, currentBranch.id, blockout.id);
+                        fetchBlockouts();
+                      } catch (err) {
+                        setError(getErrorMessage(err));
+                      }
+                    }}
+                  >
+                    Eliminar
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

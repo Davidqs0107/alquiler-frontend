@@ -16,7 +16,7 @@ interface TicketActions {
   fetchResources: (companyId: string, branchId: string) => Promise<void>;
   fetchCatalogItems: (companyId: string, branchId?: string) => Promise<void>;
   createTicket: (companyId: string, branchId: string) => Promise<Ticket | null>;
-  addRental: (companyId: string, branchId: string, ticketId: string, resourceId: string, minutes: number) => Promise<void>;
+  addRental: (companyId: string, branchId: string, ticketId: string, resourceId: string, minutes: number, customerId?: string) => Promise<void>;
   addCatalogItem: (companyId: string, branchId: string, ticketId: string, catalogItemId: string) => Promise<void>;
   addManualItem: (companyId: string, branchId: string, ticketId: string, description: string, price: string) => Promise<void>;
   addExtra: (companyId: string, branchId: string, ticketId: string, description: string, amount: string) => Promise<void>;
@@ -32,6 +32,8 @@ interface TicketActions {
   clearError: () => void;
   finishRental: (companyId: string, branchId: string, rentalSessionId: string, ticketId: string) => Promise<void>;
   cancelRental: (companyId: string, branchId: string, rentalSessionId: string, ticketId: string) => Promise<void>;
+  startRental: (companyId: string, branchId: string, rentalSessionId: string, ticketId: string) => Promise<void>;
+  extendRental: (companyId: string, branchId: string, rentalSessionId: string, ticketId: string, additionalMinutes: number, isOvertime: boolean) => Promise<void>;
 }
 
 export const useTicketStore = create<TicketState & TicketActions>((set, get) => ({
@@ -87,12 +89,13 @@ export const useTicketStore = create<TicketState & TicketActions>((set, get) => 
     }
   },
 
-  addRental: async (companyId, branchId, ticketId, resourceId, minutes) => {
+  addRental: async (companyId, branchId, ticketId, resourceId, minutes, customerId) => {
     set({ error: null });
     try {
       await ticketsApi.addRental(companyId, branchId, ticketId, {
         resourceId,
         reservedMinutes: minutes,
+        customerId,
       });
       await get().refreshTicket(companyId, branchId, ticketId);
     } catch (err) {
@@ -114,6 +117,26 @@ export const useTicketStore = create<TicketState & TicketActions>((set, get) => 
     set({ error: null });
     try {
       await rentalsApi.cancel(companyId, branchId, rentalSessionId);
+      await get().refreshTicket(companyId, branchId, ticketId);
+    } catch (err) {
+      set({ error: getErrorMessage(err) });
+    }
+  },
+
+  startRental: async (companyId: string, branchId: string, rentalSessionId: string, ticketId: string) => {
+    set({ error: null });
+    try {
+      await rentalsApi.startSession(companyId, branchId, rentalSessionId);
+      await get().refreshTicket(companyId, branchId, ticketId);
+    } catch (err) {
+      set({ error: getErrorMessage(err) });
+    }
+  },
+
+  extendRental: async (companyId: string, branchId: string, rentalSessionId: string, ticketId: string, additionalMinutes: number, isOvertime: boolean) => {
+    set({ error: null });
+    try {
+      await rentalsApi.extend(companyId, branchId, rentalSessionId, { additionalMinutes, isOvertime });
       await get().refreshTicket(companyId, branchId, ticketId);
     } catch (err) {
       set({ error: getErrorMessage(err) });

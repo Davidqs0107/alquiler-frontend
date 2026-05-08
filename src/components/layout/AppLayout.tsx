@@ -62,6 +62,7 @@ export function AppLayout() {
   const companyId = getMyCompanyId();
   const myBranches = getMyBranches();
   const isLimitedRole = ['ADMIN_SEDE', 'CAJERO', 'RECEPCION'].includes(membershipRole || '');
+  const isCajeroRecepcion = ['CAJERO', 'RECEPCION'].includes(membershipRole || '');
   const singleBranch = myBranches.length === 1 ? myBranches[0] : null;
 
   const renderNavItem = (item: { path: string; label: string; icon: string }) => {
@@ -83,6 +84,21 @@ export function AppLayout() {
       </Link>
     );
   };
+
+  const navItemsByRole = {
+    all: [
+      { path: '/tickets', label: 'Tickets', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+    ],
+    adminAndSede: [
+      { path: '/dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+      { path: '/resources', label: 'Recursos', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+      { path: '/rates', label: 'Tarifas', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+      { path: '/catalog', label: 'Catálogo', icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z' },
+      { path: '/reports', label: 'Reportes', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+    ],
+  };
+
+  const visibleNavItems = isCajeroRecepcion ? navItemsByRole.all : [...navItemsByRole.all, ...navItemsByRole.adminAndSede];
 
   return (
     <div className="flex h-screen bg-[var(--surface-base)]">
@@ -122,7 +138,7 @@ export function AppLayout() {
           </div>
 
           <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-            {baseNavItems.map(renderNavItem)}
+            {visibleNavItems.map(renderNavItem)}
 
             {user?.globalRole === 'SUPERADMIN' && (
               <div className="pt-3 mt-3 border-t border-[var(--border-subtle)]">
@@ -131,10 +147,11 @@ export function AppLayout() {
               </div>
             )}
 
-            {membershipRole === 'ADMIN_EMPRESA' && (
+            {['ADMIN_EMPRESA', 'ADMIN_SEDE'].includes(membershipRole || '') && (
               <div className="pt-3 mt-3 border-t border-[var(--border-subtle)]">
                 <p className="px-3 text-xs font-medium text-[var(--ink-tertiary)] uppercase mb-1">Mi Empresa</p>
                 {renderNavItem({ path: `/companies/${companyId}`, label: 'Gestionar Empresa', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' })}
+                {companyId && renderNavItem({ path: `/companies/${companyId}/customers`, label: 'Clientes', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' })}
               </div>
             )}
           </nav>

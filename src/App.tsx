@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts';
 import { AppLayout } from '@/components/layout';
-import { LoginPage, DashboardPage, ResourcesPage, RatesPage, CatalogPage, TicketsPage, ReportsPage, CreateCompanyPage, CompaniesPage, CompanyDetailPage } from '@/pages';
+import { LoginPage, DashboardPage, ResourcesPage, RatesPage, CatalogPage, TicketsPage, ReportsPage, CreateCompanyPage, CompaniesPage, CompanyDetailPage, CustomersPage } from '@/pages';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -68,6 +68,7 @@ function AppRoutes() {
         <Route path="companies" element={<CompaniesPage />} />
         <Route path="companies/new" element={<CreateCompanyPage />} />
         <Route path="companies/:companyId" element={<CompanyDetailPage />} />
+        <Route path="companies/:companyId/customers" element={<CustomersPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

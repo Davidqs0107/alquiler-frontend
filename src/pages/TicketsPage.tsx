@@ -3,7 +3,7 @@ import { useCompany, useTicketStore } from '@/contexts';
 import { Button, Card, Input, Select, Modal, Badge, EmptyState } from '@/components/ui';
 import type { TicketStatus, Ticket } from '@/types';
 import Swal from 'sweetalert2';
-import { ticketsApi } from '@/api';
+import { ticketsApi, customersApi } from '@/api';
 
 const statusLabels: Record<TicketStatus, { label: string; variant: 'default' | 'success' | 'error' }> = {
   OPEN: { label: 'Abierto', variant: 'default' },
@@ -40,6 +40,8 @@ export function TicketsPage() {
     clearError,
     finishRental,
     cancelRental,
+    startRental,
+    extendRental,
   } = useTicketStore();
 
   const [view, setView] = useState<'list' | 'detail'>('list');
@@ -49,12 +51,20 @@ export function TicketsPage() {
   const [showAddRentalModal, setShowAddRentalModal] = useState(false);
   const [showAddCatalogModal, setShowAddCatalogModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [extendingRentalId, setExtendingRentalId] = useState<string | null>(null);
+  const [extendDuration, setExtendDuration] = useState('60');
+  const [extendCustomMinutes, setExtendCustomMinutes] = useState('');
+  const [extendIsOvertime, setExtendIsOvertime] = useState(false);
   const [selectedResourceId, setSelectedResourceId] = useState('');
   const [reservedMinutes, setReservedMinutes] = useState('60');
   const [selectedCatalogItemId, setSelectedCatalogItemId] = useState('');
+  const [catalogQuantity, setCatalogQuantity] = useState('1');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'TRANSFER' | 'DIGITAL_WALLET' | 'OTHER'>('CASH');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
 
   const loadTicketList = useCallback(async () => {
     if (!currentCompany || !currentBranch) return;
@@ -75,10 +85,12 @@ export function TicketsPage() {
 
   const loadData = useCallback(async () => {
     if (!currentCompany || !currentBranch) return;
-    await Promise.all([
+    const [, , customersData] = await Promise.all([
       fetchResources(currentCompany.id, currentBranch.id),
       fetchCatalogItems(currentCompany.id, currentBranch.id),
+      customersApi.list(currentCompany.id).catch(() => []),
     ]);
+    setCustomers(customersData.map((c: any) => ({ id: c.id, name: c.name })));
   }, [currentCompany, currentBranch, fetchResources, fetchCatalogItems]);
 
   useEffect(() => {
@@ -125,39 +137,76 @@ export function TicketsPage() {
     e.preventDefault();
     if (!currentCompany || !currentBranch || !activeTicket) return;
     setIsSubmitting(true);
-    await addRental(currentCompany.id, currentBranch.id, activeTicket.id, selectedResourceId, parseInt(reservedMinutes, 10));
+    await addRental(currentCompany.id, currentBranch.id, activeTicket.id, selectedResourceId, parseInt(reservedMinutes, 10), selectedCustomerId || undefined);
     setIsSubmitting(false);
     setShowAddRentalModal(false);
     setSelectedResourceId('');
     setReservedMinutes('60');
+    setSelectedCustomerId('');
   };
 
   const handleAddCatalogItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentCompany || !currentBranch || !activeTicket) return;
+    if (!currentCompany || !currentBranch || !activeTicket || !selectedCatalogItemId) return;
     setIsSubmitting(true);
-    await addCatalogItem(currentCompany.id, currentBranch.id, activeTicket.id, selectedCatalogItemId);
+    const qty = parseInt(catalogQuantity, 10);
+    for (let i = 0; i < qty; i++) {
+      await addCatalogItem(currentCompany.id, currentBranch.id, activeTicket.id, selectedCatalogItemId);
+    }
     setIsSubmitting(false);
     setShowAddCatalogModal(false);
     setSelectedCatalogItemId('');
+    setCatalogQuantity('1');
   };
 
   const handleAddManualItem = async () => {
     if (!currentCompany || !currentBranch || !activeTicket) return;
-    const description = prompt('Descripción del ítem:');
-    if (!description) return;
-    const price = prompt('Precio:');
-    if (!price) return;
-    await addManualItem(currentCompany.id, currentBranch.id, activeTicket.id, description, price);
+    const { value: formValues } = await Swal.fire({
+      title: 'Agregar ítem manual',
+      html: `
+        <input id="swal-description" class="swal2-input" placeholder="Descripción del ítem">
+        <input id="swal-price" type="number" step="0.01" class="swal2-input" placeholder="Precio">
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      preConfirm: () => {
+        const description = (document.getElementById('swal-description') as HTMLInputElement).value;
+        const price = (document.getElementById('swal-price') as HTMLInputElement).value;
+        if (!description || !price) {
+          Swal.showValidationMessage('Completá ambos campos');
+          return false;
+        }
+        return { description, price };
+      },
+    });
+    if (formValues) {
+      await addManualItem(currentCompany.id, currentBranch.id, activeTicket.id, formValues.description, formValues.price);
+    }
   };
 
   const handleAddExtra = async () => {
     if (!currentCompany || !currentBranch || !activeTicket) return;
-    const description = prompt('Descripción del extra:');
-    if (!description) return;
-    const amount = prompt('Monto:');
-    if (!amount) return;
-    await addExtra(currentCompany.id, currentBranch.id, activeTicket.id, description, amount);
+    const { value: formValues } = await Swal.fire({
+      title: 'Agregar extra',
+      html: `
+        <input id="swal-description" class="swal2-input" placeholder="Descripción del extra">
+        <input id="swal-amount" type="number" step="0.01" class="swal2-input" placeholder="Monto">
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      preConfirm: () => {
+        const description = (document.getElementById('swal-description') as HTMLInputElement).value;
+        const amount = (document.getElementById('swal-amount') as HTMLInputElement).value;
+        if (!description || !amount) {
+          Swal.showValidationMessage('Completá ambos campos');
+          return false;
+        }
+        return { description, amount };
+      },
+    });
+    if (formValues) {
+      await addExtra(currentCompany.id, currentBranch.id, activeTicket.id, formValues.description, formValues.amount);
+    }
   };
 
   const handleRegisterPayment = async (e: React.FormEvent) => {
@@ -249,6 +298,40 @@ export function TicketsPage() {
     });
     if (!result.isConfirmed) return;
     await cancelRental(currentCompany.id, currentBranch.id, rentalSessionId, activeTicket.id);
+  };
+
+  const handleExtendClick = (rentalSessionId: string) => {
+    setExtendingRentalId(rentalSessionId);
+    setExtendDuration('60');
+    setExtendCustomMinutes('');
+    setExtendIsOvertime(false);
+    setShowExtendModal(true);
+  };
+
+  const handleExtendRental = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCompany || !currentBranch || !activeTicket || !extendingRentalId) return;
+    const minutes = extendDuration === 'custom'
+      ? parseInt(extendCustomMinutes, 10)
+      : parseInt(extendDuration, 10);
+    setIsSubmitting(true);
+    await extendRental(currentCompany.id, currentBranch.id, extendingRentalId, activeTicket.id, minutes, extendIsOvertime);
+    setIsSubmitting(false);
+    setShowExtendModal(false);
+    setExtendingRentalId(null);
+  };
+
+  const handleStartRental = async (rentalSessionId: string) => {
+    if (!currentCompany || !currentBranch || !activeTicket) return;
+    const result = await Swal.fire({
+      icon: 'question',
+      title: '¿Iniciar uso de este alquiler?',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, iniciar',
+      cancelButtonText: 'No',
+    });
+    if (!result.isConfirmed) return;
+    await startRental(currentCompany.id, currentBranch.id, rentalSessionId, activeTicket.id);
   };
 
   const handleCancelTicket = async () => {
@@ -445,13 +528,31 @@ export function TicketsPage() {
                             {item.rentalSession.status === 'IN_USE' ? 'En uso' : item.rentalSession.status === 'RESERVED' ? 'Reservado' : item.rentalSession.status}
                           </Badge>
                         )}
+                        {item.rentalSession?.customer && (
+                          <p className="text-xs text-[var(--ink-tertiary)] mt-0.5">Cliente: {item.rentalSession.customer.name}</p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span className="text-sm font-medium">${parseFloat(item.subtotal).toFixed(2)}</span>
-                        {activeTicket.status === 'OPEN' && item.rentalSession && (
-                          <button onClick={() => handleFinishRental(item.rentalSession!.id)} className="text-[var(--success)] hover:text-[var(--success)]/80 p-1" title="Finalizar alquiler">
+                        {activeTicket.status === 'OPEN' && item.rentalSession?.status === 'IN_USE' && (
+                          <>
+                            <button onClick={() => handleFinishRental(item.rentalSession!.id)} className="text-[var(--success)] hover:text-[var(--success)]/80 p-1" title="Finalizar alquiler">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </button>
+                            <button onClick={() => handleExtendClick(item.rentalSession!.id)} className="text-[var(--accent)] hover:text-[var(--accent)]/80 p-1" title="Extender alquiler">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                        {activeTicket.status === 'OPEN' && item.rentalSession?.status === 'RESERVED' && (
+                          <button onClick={() => handleStartRental(item.rentalSession!.id)} className="text-[var(--success)] hover:text-[var(--success)]/80 p-1" title="Iniciar uso">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </button>
                         )}
@@ -546,6 +647,13 @@ export function TicketsPage() {
         <Modal isOpen={showAddRentalModal} onClose={() => setShowAddRentalModal(false)} title="Agregar Alquiler">
           <form onSubmit={handleAddRental} className="space-y-4">
             <Select
+              label="Cliente (opcional)"
+              options={[{ value: '', label: 'Sin cliente' }, ...customers.map((c) => ({ value: c.id, label: c.name }))]}
+              value={selectedCustomerId}
+              onChange={(e) => setSelectedCustomerId(e.target.value)}
+              placeholder="Seleccionar cliente"
+            />
+            <Select
               label="Recurso"
               options={resources.map((r) => ({ value: r.id, label: r.name }))}
               value={selectedResourceId}
@@ -579,9 +687,16 @@ export function TicketsPage() {
               onChange={(e) => setSelectedCatalogItemId(e.target.value)}
               placeholder="Seleccionar ítem"
             />
+            <Input
+              label="Cantidad"
+              type="number"
+              min="1"
+              value={catalogQuantity}
+              onChange={(e) => setCatalogQuantity(e.target.value)}
+            />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setShowAddCatalogModal(false)}>Cancelar</Button>
-              <Button type="submit" isLoading={isSubmitting}>Agregar</Button>
+              <Button type="submit" isLoading={isSubmitting} disabled={!selectedCatalogItemId || parseInt(catalogQuantity, 10) < 1}>Agregar</Button>
             </div>
           </form>
         </Modal>
@@ -612,6 +727,46 @@ export function TicketsPage() {
             <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setShowPaymentModal(false)}>Cancelar</Button>
               <Button type="submit" isLoading={isSubmitting}>Registrar</Button>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal isOpen={showExtendModal} onClose={() => setShowExtendModal(false)} title="Extender Alquiler">
+          <form onSubmit={handleExtendRental} className="space-y-4">
+            <Select
+              label="Agregar tiempo"
+              options={[
+                { value: '30', label: '+30 minutos' },
+                { value: '60', label: '+1 hora' },
+                { value: '120', label: '+2 horas' },
+                { value: 'custom', label: 'Custom...' },
+              ]}
+              value={extendDuration}
+              onChange={(e) => setExtendDuration(e.target.value)}
+            />
+            {extendDuration === 'custom' && (
+              <Input
+                label="Minutos adicionales"
+                type="number"
+                min="1"
+                value={extendCustomMinutes}
+                onChange={(e) => setExtendCustomMinutes(e.target.value)}
+                placeholder="Ej: 45"
+                required
+              />
+            )}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={extendIsOvertime}
+                onChange={(e) => setExtendIsOvertime(e.target.checked)}
+                className="w-4 h-4 rounded border-[var(--border-subtle)]"
+              />
+              <span className="text-sm text-[var(--ink-secondary)]">Marcar como overtime</span>
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setShowExtendModal(false)}>Cancelar</Button>
+              <Button type="submit" isLoading={isSubmitting}>Extender</Button>
             </div>
           </form>
         </Modal>
